@@ -148,10 +148,10 @@ export default function Dashboard({ userEmail = '', onLogout }) {
     catch { return { mode:'demo', level:1, instrument:'EUR_USD', tf:'5m', direction:'both', autoPair:false }; }
   });
   const [localDemo, setLocalDemo] = useState(() => {
-  const [scanResult,  setScanResult]  = useState(null);
-  const [scanLoading, setScanLoading] = useState(false);
     try { const s = localStorage.getItem('ft_demo'); return s ? JSON.parse(s) : null; } catch { return null; }
   });
+  const [scanResult,  setScanResult]  = useState(null);
+  const [scanLoading, setScanLoading] = useState(false);
   const wakeLockRef = useRef(null);
   const cycleRef    = useRef(null);
 
