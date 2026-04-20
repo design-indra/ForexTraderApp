@@ -726,22 +726,32 @@ export default function Dashboard({ userEmail = '', onLogout }) {
                     </div>
                   )}
                   <div className="text-slate-500 text-sm mt-1">Score: {signal.score?.toFixed(0) || 50}/100</div>
-                  <div className="text-xs text-slate-600 mt-1">
-                    {signal.fromScanner ? '🔍 Scanner Signal' : `Level ${signal.level || config.level} · ${currentLevel.label}`}
-                    {signal.boostedByScan && <span className="text-amber-400 ml-1">⚡ Boosted</span>}
+                  <div className="text-xs text-slate-600 mt-1 flex items-center gap-1.5 justify-center flex-wrap">
+                    {signal.fromScanner
+                      ? <span>🔍 Scanner Signal</span>
+                      : <span>Level {signal.level || config.level} · {currentLevel.label}</span>
+                    }
+                    {signal.boostedByScan     && <span className="text-amber-400">⚡ Boosted</span>}
+                    {signal.overriddenByScan  && <span className="text-purple-400">🔄 Override</span>}
+                    {signal.sessionBlocked    && <span className="text-orange-400">🕐 Sesi Sepi</span>}
                   </div>
                 </div>
 
                 <div className="rounded-2xl border border-slate-700 p-3" style={{ background:'var(--surface-2)' }}>
                   <div className="flex justify-between text-xs mb-2">
                     <span className="text-slate-500">Signal Strength</span>
-                    <span className="text-slate-300">{signal.score?.toFixed(0) || 50}/100</span>
+                    <span className="text-slate-300">{signal.score?.toFixed(0) || 0}/100</span>
                   </div>
                   <div className="h-3 bg-slate-700 rounded-full overflow-hidden">
                     <div className="h-full rounded-full transition-all" style={{
-                      width: `${signal.score || 50}%`,
-                      background: signal.score >= 65 ? 'linear-gradient(90deg,#10b981,#059669)' : signal.score <= 35 ? 'linear-gradient(90deg,#ef4444,#dc2626)' : '#64748b',
+                      width: `${signal.score || 0}%`,
+                      background: signal.score >= 75 ? 'linear-gradient(90deg,#10b981,#059669)' :
+                                  signal.score >= 55 ? 'linear-gradient(90deg,#f59e0b,#d97706)' :
+                                  signal.score >= 35 ? 'linear-gradient(90deg,#ef4444,#dc2626)' : '#475569',
                     }}/>
+                  </div>
+                  <div className="flex justify-between text-xs mt-1.5 text-slate-600">
+                    <span>Lemah</span><span>Sedang</span><span>Kuat</span>
                   </div>
                 </div>
 
