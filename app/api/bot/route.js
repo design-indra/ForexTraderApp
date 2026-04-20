@@ -228,10 +228,11 @@ export async function POST(req) {
           startBalance : demo.startBalance  || 10000,
           targetBalance: riskCfg.targetProfitUSD || 500,
           openPositions: openForInstrument,
-          // Override sinyal jika dari scan (lebih akurat)
+          instrument,   // ← instrument aktif (dari scanner atau config)
           scanSignal   : autoPair && scanData?.best?.instrument === instrument ? {
             action: scanData.best.action,
             score : scanData.best.score,
+            delta : scanData.best.delta,
           } : null,
         });
 
@@ -309,6 +310,7 @@ export async function POST(req) {
           }
         }
 
+        const freshState = getBotState();
         return NextResponse.json({
           success    : true,
           decision,
@@ -316,6 +318,21 @@ export async function POST(req) {
           autoPair,
           scanResult : scanData,
           demo       : getDemoState(),
+          bot        : {
+            running          : freshState.running,
+            mode             : freshState.mode,
+            level            : freshState.level,
+            instrument       : freshState.instrument,
+            direction        : freshState.direction,
+            isPaused         : freshState.isPaused,
+            consecutiveLosses: freshState.consecutiveLosses,
+            consecutiveWins  : freshState.consecutiveWins,
+            totalPnl         : freshState.totalPnl,
+            lastSignal       : freshState.lastSignal,
+            stats            : freshState.stats,
+            autoPair         : freshState.autoPair || autoPair,
+            currentPair      : instrument,
+          },
         });
       }
 

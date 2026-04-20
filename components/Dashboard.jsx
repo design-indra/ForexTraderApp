@@ -246,7 +246,17 @@ export default function Dashboard({ userEmail = '', onLogout }) {
             }),
           });
           const d = await res.json();
-          if (d.success && d.demo) { saveDemoState(d.demo); setBotData(prev => prev ? { ...prev, demo: d.demo } : prev); if (d.scanResult) setScanResult(d.scanResult); }
+          if (d.success) {
+              if (d.demo) saveDemoState(d.demo);
+              if (d.scanResult) setScanResult(d.scanResult);
+              setBotData(prev => {
+                if (!prev) return prev;
+                const updated = { ...prev };
+                if (d.demo)  updated.demo = d.demo;
+                if (d.bot)   updated.bot  = { ...prev.bot, ...d.bot };
+                return updated;
+              });
+            }
         } catch {}
       }, 5000);
     } else clearInterval(cycleRef.current);
@@ -334,7 +344,16 @@ export default function Dashboard({ userEmail = '', onLogout }) {
   const target     = riskSettings?.targetProfitUSD || 500;
   const progress   = Math.min(100, Math.max(0, ((totalBal - startBal) / (target)) * 100));
   const currentLevel = LEVELS.find(l => l.id === (bot.level || config.level)) || LEVELS[0];
-  const signal     = bot.lastSignal;
+  // Signal: dari lastSignal bot, atau fallback ke scanner best
+  const signal = bot.lastSignal ||
+    (scanResult?.best && scanResult.best.action !== 'HOLD' ? {
+      action   : scanResult.best.action,
+      score    : scanResult.best.score,
+      instrument: scanResult.best.instrument,
+      fromScanner: true,
+      reasons  : scanResult.best.reasons || [],
+      session  : null,
+    } : null);
 
   if (loading) return (
     <div className="min-h-screen flex items-center justify-center" style={{ background:'var(--surface)' }}>
@@ -700,8 +719,17 @@ export default function Dashboard({ userEmail = '', onLogout }) {
                   <div className={`text-2xl font-bold ${signal.action === 'BUY' ? 'text-emerald-400' : signal.action === 'SELL' ? 'text-red-400' : 'text-slate-400'}`}>
                     {signal.action}
                   </div>
+                  {/* Pair yang menghasilkan sinyal */}
+                  {(signal.instrument || (config.autoPair && bot.currentPair)) && (
+                    <div className="text-base font-bold text-slate-300 mt-1">
+                      {(signal.instrument || bot.currentPair).replace('_','/')}
+                    </div>
+                  )}
                   <div className="text-slate-500 text-sm mt-1">Score: {signal.score?.toFixed(0) || 50}/100</div>
-                  <div className="text-xs text-slate-600 mt-1">Level {signal.level || config.level} · {currentLevel.label}</div>
+                  <div className="text-xs text-slate-600 mt-1">
+                    {signal.fromScanner ? '🔍 Scanner Signal' : `Level ${signal.level || config.level} · ${currentLevel.label}`}
+                    {signal.boostedByScan && <span className="text-amber-400 ml-1">⚡ Boosted</span>}
+                  </div>
                 </div>
 
                 <div className="rounded-2xl border border-slate-700 p-3" style={{ background:'var(--surface-2)' }}>
@@ -752,7 +780,10 @@ export default function Dashboard({ userEmail = '', onLogout }) {
             ) : (
               <div className="text-center py-12 text-slate-600">
                 <Activity size={40} className="mx-auto mb-3 opacity-30"/>
-                <p>Jalankan bot untuk melihat sinyal</p>
+                <p>{isRunning ? 'Menunggu sinyal pertama...' : 'Jalankan bot untuk melihat sinyal'}</p>
+                {isRunning && config.autoPair && (
+                  <p className="text-xs text-slate-700 mt-2">Bot sedang scan {scanResult?.scannedCount || 15} pair...</p>
+                )}
               </div>
             )}
           </div>
