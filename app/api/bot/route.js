@@ -1,13 +1,29 @@
 /**
  * app/api/bot/route.js — ForexTrader Bot Controller (MONEX/MIFX Edition)
+ * v2.1 — Auto Pair Scanner support
  */
 import { NextResponse } from 'next/server';
-import { getBotState, startBot, stopBot, resetBotState, resumeBot, getLogs, runCycle, recordTradeResult } from '../../../lib/tradingEngine.js';
-import { getDemoState, resetDemo, demoOpen, demoClose, updatePositions, setStartBalance } from '../../../lib/demoStore.js';
+import {
+  getBotState, startBot, stopBot, resetBotState,
+  resumeBot, getLogs, runCycle, recordTradeResult,
+} from '../../../lib/tradingEngine.js';
+import {
+  getDemoState, resetDemo, demoOpen, demoClose,
+  updatePositions, setStartBalance,
+} from '../../../lib/demoStore.js';
 import { getOHLCV, openTrade, closeTrade } from '../../../lib/monex.js';
 import { getRiskSettings } from '../../../lib/riskManager.js';
+import { scanAllPairs } from '../../../lib/pairScanner.js';
 
-const TF_MAP = { '1m':'M1','5m':'M5','15m':'M15','30m':'M30','1h':'H1','4h':'H4','1d':'D' };
+const TF_MAP = {
+  '1m':'M1','5m':'M5','15m':'M15','30m':'M30',
+  '1h':'H1','4h':'H4','1d':'D',
+};
+
+// ── Simpan hasil scan terakhir (in-memory, per instance) ──────────────────────
+let lastScanResult = null;
+let lastScanTime   = 0;
+const SCAN_INTERVAL_MS = 30_000; // re-scan tiap 30 detik
 
 export async function GET() {
   const state = getBotState();
@@ -16,22 +32,32 @@ export async function GET() {
   return NextResponse.json({
     success: true,
     bot: {
-      running: state.running, mode: state.mode, level: state.level,
-      instrument: state.instrument, direction: state.direction,
-      isPaused: state.isPaused, pauseReason: state.pauseReason,
-      consecutiveLosses: state.consecutiveLosses, consecutiveWins: state.consecutiveWins,
-      totalPnl: state.totalPnl, lastSignal: state.lastSignal, stats: state.stats,
+      running           : state.running,
+      mode              : state.mode,
+      level             : state.level,
+      instrument        : state.instrument,
+      direction         : state.direction,
+      isPaused          : state.isPaused,
+      pauseReason       : state.pauseReason,
+      consecutiveLosses : state.consecutiveLosses,
+      consecutiveWins   : state.consecutiveWins,
+      totalPnl          : state.totalPnl,
+      lastSignal        : state.lastSignal,
+      stats             : state.stats,
+      autoPair          : state.autoPair || false,
+      currentPair       : state.currentPair || state.instrument,
     },
     demo: {
-      usdBalance:    demo.usdBalance,
-      startBalance:  demo.startBalance,
-      totalPnl:      demo.totalPnl,
-      totalPnlPct:   demo.totalPnlPct,
-      openPositions: demo.openPositions,
-      closedTrades:  demo.closedTrades.slice(0, 50),
-      tradeCount:    demo.tradeCount,
-      consecutiveLosses: demo.consecutiveLosses,
+      usdBalance        : demo.usdBalance,
+      startBalance      : demo.startBalance,
+      totalPnl          : demo.totalPnl,
+      totalPnlPct       : demo.totalPnlPct,
+      openPositions     : demo.openPositions,
+      closedTrades      : demo.closedTrades.slice(0, 50),
+      tradeCount        : demo.tradeCount,
+      consecutiveLosses : demo.consecutiveLosses,
     },
+    scanResult: lastScanResult,
     logs,
   });
 }
@@ -40,7 +66,7 @@ export async function POST(req) {
   const body = await req.json().catch(() => ({}));
   const { action, config, clientState, brokerCredentials } = body;
 
-  // Restore client state (stateless fix)
+  // ── Restore client state ─────────────────────────────────────────────────────
   if (clientState) {
     const demo = getDemoState();
     if (clientState.usdBalance !== undefined) {
@@ -65,6 +91,7 @@ export async function POST(req) {
   try {
     switch (action) {
 
+      // ── Start ───────────────────────────────────────────────────────────────
       case 'start': {
         if ((config?.mode === 'live' || config?.mode === 'practice') && !config.confirmed) {
           return NextResponse.json({ success: false, requireConfirmation: true });
@@ -74,7 +101,13 @@ export async function POST(req) {
       }
 
       case 'sync':
-        return NextResponse.json({ success: true, bot: getBotState(), demo: getDemoState(), logs: getLogs(50) });
+        return NextResponse.json({
+          success: true,
+          bot: getBotState(),
+          demo: getDemoState(),
+          logs: getLogs(50),
+          scanResult: lastScanResult,
+        });
 
       case 'stop':   stopBot();   return NextResponse.json({ success: true });
       case 'resume': resumeBot(); return NextResponse.json({ success: true });
@@ -84,6 +117,7 @@ export async function POST(req) {
         const amount = config?.balance || 10000;
         setStartBalance(amount);
         resetDemo(amount);
+        lastScanResult = null;
         return NextResponse.json({ success: true, demo: getDemoState() });
       }
 
@@ -101,38 +135,107 @@ export async function POST(req) {
 
       case 'clearHistory': {
         const demo = getDemoState();
-        demo.closedTrades = []; demo.totalPnl = 0; demo.totalPnlPct = 0; demo.tradeCount = 0;
+        demo.closedTrades = []; demo.totalPnl = 0;
+        demo.totalPnlPct  = 0;  demo.tradeCount = 0;
         return NextResponse.json({ success: true, demo: getDemoState() });
       }
 
+      // ── Scan — paksa scan ulang semua pair ──────────────────────────────────
+      case 'scan': {
+        const tf    = config?.tf || '5m';
+        const creds = brokerCredentials || {};
+        const scan  = await scanAllPairs(tf, creds);
+        lastScanResult = scan;
+        lastScanTime   = Date.now();
+        return NextResponse.json({ success: true, scan });
+      }
+
+      // ── Cycle ────────────────────────────────────────────────────────────────
       case 'cycle': {
-        const state = getBotState();
+        const state     = getBotState();
         if (!state.running) return NextResponse.json({ success: false, error: 'Bot not running' });
 
-        const instrument  = config?.instrument || state.instrument || 'EUR_USD';
-        const tf          = config?.tf          || '5m';
+        const tf          = config?.tf   || '5m';
+        const autoPair    = config?.autoPair ?? state.autoPair ?? false;
+        const creds       = (state.mode !== 'demo') ? brokerCredentials : null;
+        const demo        = getDemoState();
+        const openPos     = demo.openPositions || [];
+        const hasOpenPos  = openPos.length > 0;
+
+        // ── Tentukan instrument yang digunakan ──────────────────────────────
+        let instrument = config?.instrument || state.instrument || 'EUR_USD';
+        let scanData   = null;
+
+        if (autoPair && !hasOpenPos) {
+          // Re-scan jika sudah lewat interval ATAU dipaksa
+          const needScan = (Date.now() - lastScanTime) > SCAN_INTERVAL_MS;
+          if (needScan || !lastScanResult) {
+            scanData       = await scanAllPairs(tf, creds || {});
+            lastScanResult = scanData;
+            lastScanTime   = Date.now();
+          } else {
+            scanData = lastScanResult;
+          }
+
+          // Ambil pair terbaik dari scan
+          if (scanData?.best && scanData.best.action !== 'HOLD') {
+            instrument = scanData.best.instrument;
+            // Update state bot dengan pair aktif saat ini
+            state.currentPair = instrument;
+          } else {
+            // Tidak ada sinyal kuat — skip cycle ini
+            return NextResponse.json({
+              success    : true,
+              skipped    : true,
+              reason     : 'no_strong_signal_in_scan',
+              scanResult : scanData,
+              demo       : getDemoState(),
+            });
+          }
+        }
+
         const granularity = TF_MAP[tf] || 'M5';
 
-        // Ambil candle — gunakan credentials untuk mode live
-        const creds = (state.mode !== 'demo') ? brokerCredentials : null;
-        const candles = await getOHLCV(instrument, granularity, 100, creds || {});
-        if (!candles || candles.length < 30) return NextResponse.json({ success: false, error: 'Insufficient candle data' });
+        // ── Fetch candles ──────────────────────────────────────────────────
+        // Jika autoPair dan sudah punya candles dari scan, pakai itu
+        let candles = scanData?.best?.instrument === instrument
+          ? scanData?.best?.candles
+          : null;
 
-        const demo  = getDemoState();
+        if (!candles || candles.length < 30) {
+          candles = await getOHLCV(instrument, granularity, 100, creds || {});
+        }
+
+        if (!candles || candles.length < 30) {
+          return NextResponse.json({ success: false, error: 'Insufficient candle data' });
+        }
+
         const close = candles[candles.length - 1].close;
         updatePositions(instrument, close);
 
-        let openPositions = demo.openPositions.filter(p => p.instrument === instrument);
-        const riskCfg     = getRiskSettings();
+        // Update unrealized PnL untuk posisi pair lain juga
+        const otherPairs = [...new Set(openPos.map(p => p.instrument).filter(p => p !== instrument))];
+        for (const p of otherPairs) {
+          const pc = await getOHLCV(p, granularity, 5, creds || {}).then(c => c?.slice(-1)[0]?.close).catch(() => null);
+          if (pc) updatePositions(p, pc);
+        }
+
+        const riskCfg  = getRiskSettings();
+        const openForInstrument = openPos.filter(p => p.instrument === instrument);
 
         const decision = await runCycle(candles, {
-          balance:       demo.usdBalance,
-          startBalance:  demo.startBalance  || 10000,
+          balance      : demo.usdBalance,
+          startBalance : demo.startBalance  || 10000,
           targetBalance: riskCfg.targetProfitUSD || 500,
-          openPositions,
+          openPositions: openForInstrument,
+          // Override sinyal jika dari scan (lebih akurat)
+          scanSignal   : autoPair && scanData?.best?.instrument === instrument ? {
+            action: scanData.best.action,
+            score : scanData.best.score,
+          } : null,
         });
 
-        // ── Process exits ─────────────────────────────────────────────────────
+        // ── Process exits ──────────────────────────────────────────────────
         for (const exitDec of (decision.exits || [])) {
           if (exitDec.isPartial) {
             const pos      = exitDec.position;
@@ -156,19 +259,22 @@ export async function POST(req) {
             demo.totalPnl    = parseFloat((demo.totalPnl   + trade.pnlUSD).toFixed(2));
             demo.totalPnlPct = parseFloat(((demo.totalPnl / demo.startBalance) * 100).toFixed(2));
             const idx = demo.openPositions.findIndex(p => p.id === pos.id);
-            if (idx !== -1) { demo.openPositions[idx] = { ...demo.openPositions[idx], lots: halfLots, tp1Triggered: true }; }
+            if (idx !== -1) {
+              demo.openPositions[idx] = { ...demo.openPositions[idx], lots: halfLots, tp1Triggered: true };
+            }
             continue;
           }
           if (exitDec.isBreakeven) {
             const idx = demo.openPositions.findIndex(p => p.id === exitDec.position.id);
-            if (idx !== -1) { demo.openPositions[idx] = { ...demo.openPositions[idx], stopLoss: exitDec.newStopLoss, breakevenSet: true }; }
+            if (idx !== -1) {
+              demo.openPositions[idx] = { ...demo.openPositions[idx], stopLoss: exitDec.newStopLoss, breakevenSet: true };
+            }
             continue;
           }
           if (state.mode === 'demo') {
             const result = demoClose(exitDec.position.id, close, exitDec.reason);
             if (result.success) recordTradeResult(result.trade.pnlUSD, result.trade.pnlPips, instrument);
           } else {
-            // Live MONEX close
             try {
               await closeTrade(exitDec.position.monexTradeId || exitDec.position.id, creds || {});
               recordTradeResult(exitDec.pnlUSD || 0, exitDec.pnlPips || 0, instrument);
@@ -178,14 +284,20 @@ export async function POST(req) {
           }
         }
 
-        // ── Process entry ─────────────────────────────────────────────────────
+        // ── Process entry ──────────────────────────────────────────────────
         if (decision.entry) {
           const e = decision.entry;
           if (state.mode === 'demo') {
             demoOpen(instrument, e.direction, e.lots, e.price, e.stopLoss, e.takeProfit, {
-              slPips: e.slPips, tpPips: e.tpPips, riskUSD: e.riskUSD,
-              riskReward: e.riskReward, score: e.score, level: e.level,
-              session: e.session, momentumGrade: e.momentumGrade,
+              slPips        : e.slPips,
+              tpPips        : e.tpPips,
+              riskUSD       : e.riskUSD,
+              riskReward    : e.riskReward,
+              score         : e.score,
+              level         : e.level,
+              session       : e.session,
+              momentumGrade : e.momentumGrade,
+              foundByScanner: autoPair,
             });
           } else {
             try {
@@ -197,7 +309,14 @@ export async function POST(req) {
           }
         }
 
-        return NextResponse.json({ success: true, decision, demo: getDemoState() });
+        return NextResponse.json({
+          success    : true,
+          decision,
+          instrument,
+          autoPair,
+          scanResult : scanData,
+          demo       : getDemoState(),
+        });
       }
 
       default:
