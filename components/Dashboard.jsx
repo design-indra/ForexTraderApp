@@ -666,14 +666,14 @@ export default function Dashboard({ userEmail = '', onLogout }) {
         {tab === 'chart' && (
           <div className="p-3 space-y-3">
             <div className="rounded-2xl border border-slate-700 overflow-hidden" style={{ background:'var(--surface-2)' }}>
-              <div className="px-3 pt-3 pb-2 flex items-center justify-between">
-                <div>
-                  <h3 className="text-sm font-bold text-slate-100">{config.instrument.replace('_','/')} · {config.tf}</h3>
-                  <p className="text-xs text-slate-500">{candles.length} candles</p>
-                </div>
-                <button onClick={fetchMarket} className="text-slate-500 hover:text-slate-300"><RefreshCw size={15}/></button>
-              </div>
-              <CandleChart candles={candles} indicators={indicators} instrument={config.instrument}/>
+              <CandleChart
+                candles={candles}
+                indicators={indicators}
+                instrument={config.autoPair && bot.currentPair ? bot.currentPair : config.instrument}
+                tf={config.tf}
+                openPositions={openPos}
+                onRefresh={fetchMarket}
+              />
             </div>
             <div className="grid grid-cols-2 gap-2">
               <StatCard label="RSI 14" value={indicators.rsi14?.toFixed(1) || '-'} color={indicators.rsi14 < 30 ? '#10b981' : indicators.rsi14 > 70 ? '#ef4444' : '#94a3b8'} icon="📊"/>
