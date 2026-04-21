@@ -477,23 +477,21 @@ export default function Dashboard({ userEmail = '', onLogout }) {
               )}
             </div>
 
-            {/* ── Auto Pair Scanner — hanya toggle, detail di tab Signal ── */}
-            <div className={`rounded-2xl border px-4 py-3 flex items-center justify-between transition-all ${config.autoPair ? 'border-emerald-700/50 bg-emerald-900/10' : 'border-slate-700'}`} style={{ background: config.autoPair ? undefined : 'var(--surface-2)' }}>
-              <div className="flex items-center gap-2.5 min-w-0">
-                <span className="text-lg shrink-0">🔍</span>
-                <div className="min-w-0">
-                  <div className="text-sm font-bold text-slate-100">Auto Pair Scanner</div>
-                  <div className="text-xs text-slate-500 truncate">
-                    {config.autoPair
-                      ? scanResult?.best
-                        ? `${scanResult.best.instrument.replace('_','/')} ${scanResult.best.action} ${scanResult.best.score}pts · ${scanResult.scannedCount} pair`
-                        : 'Scanning...'
-                      : 'Tab Signal untuk detail'}
-                  </div>
+            {/* ── Auto Pair Scanner — info saja, toggle ada di tab Signal ── */}
+            {config.autoPair && (
+              <div className="rounded-2xl border border-emerald-700/40 px-4 py-2.5 flex items-center gap-3 bg-emerald-900/10">
+                <span className="text-base shrink-0">🔍</span>
+                <div className="flex-1 min-w-0">
+                  <span className="text-xs font-bold text-emerald-400">Auto Scan Aktif</span>
+                  <span className="text-xs text-slate-400 ml-2">
+                    {scanResult?.best
+                      ? `${scanResult.best.instrument.replace('_','/')} · ${scanResult.best.action} · ${scanResult.best.score}pts`
+                      : 'Mencari sinyal terbaik...'}
+                  </span>
                 </div>
+                <span className="text-xs text-slate-600">📡 {scanResult?.scannedCount || 15} pair</span>
               </div>
-              <Toggle value={!!config.autoPair} onChange={v => setConfig(c => ({ ...c, autoPair: v }))}/>
-            </div>
+            )}
 
             {/* Balance + PnL — tampilan IDR */}
             <div className="grid grid-cols-2 gap-2">
