@@ -326,8 +326,10 @@ export default function Dashboard({ userEmail = '', onLogout }) {
   // ── Derived state ────────────────────────────────────────────────────────────
   const bot        = botData?.bot  || {};
   const serverDemo = botData?.demo || {};
+  // FIX: openPositions dan closedTrades SELALU dari server (data real-time + unrealizedPnl akurat)
+  // localDemo hanya untuk balance/totalPnl saat server belum respond
   const demo       = localDemo
-    ? { ...serverDemo, ...localDemo, openPositions: localDemo.openPositions ?? serverDemo.openPositions, closedTrades: localDemo.closedTrades ?? serverDemo.closedTrades }
+    ? { ...serverDemo, ...localDemo, openPositions: serverDemo.openPositions ?? localDemo.openPositions, closedTrades: serverDemo.closedTrades ?? localDemo.closedTrades }
     : serverDemo;
   const logs       = botData?.logs || [];
   const ticker     = marketData?.ticker     || {};
