@@ -613,7 +613,14 @@ export default function Dashboard({ userEmail = '', onLogout }) {
               <div>
                 <h3 className="text-xs font-semibold text-slate-400 mb-2">Posisi Terbuka ({openPos.length})</h3>
                 <div className="space-y-2">
-                  {openPos.map(p => <PositionCard key={p.id} position={p} currentPrice={ticker.mid || p.entryPrice}/>)}
+                  {openPos.map(p => {
+                    // FIX: gunakan p.currentPrice (dari demoStore.updatePositions) bukan ticker.mid
+                    // ticker.mid adalah harga instrument yg DITAMPILKAN dashboard, bukan harga posisi tsb
+                    const posPrice = p.currentPrice
+                      || (p.instrument === config.instrument ? ticker.mid : null)
+                      || p.entryPrice;
+                    return <PositionCard key={p.id} position={p} currentPrice={posPrice}/>;
+                  })}
                 </div>
               </div>
             )}
