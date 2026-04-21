@@ -11,7 +11,7 @@ import {
   getDemoState, resetDemo, demoOpen, demoClose,
   updatePositions, setStartBalance,
 } from '../../../lib/demoStore.js';
-import { getOHLCV, openTrade, closeTrade } from '../../../lib/monex.js';
+import { getOHLCV, openTrade, closeTrade, getTicker } from '../../../lib/monex.js';
 import { getRiskSettings } from '../../../lib/riskManager.js';
 import { scanAllPairs } from '../../../lib/pairScanner.js';
 
@@ -205,11 +205,9 @@ export async function POST(req) {
 
         const granularity = TF_MAP[tf] || 'M5';
 
-        // ── Fetch candles ──────────────────────────────────────────────────
-        // Gunakan candles dari scan hanya jika instrument cocok dan belum ada posisi terbuka
-        let candles = (!hasOpenPos && scanData?.best?.instrument === instrument)
-          ? scanData?.best?.candles
-          : null;
+        // FIX: Selalu fetch candles segar — jangan reuse dari scanner (bisa 30 detik stale)
+        // Candles stale = sinyal stale = entry di harga yang sudah berubah
+        let candles = null;
 
         if (!candles || candles.length < 30) {
           candles = await getOHLCV(instrument, granularity, 100, creds || {});
@@ -233,6 +231,9 @@ export async function POST(req) {
         // FIX: Filter posisi berdasarkan instrument yang BENAR (instrument dari posisi terbuka)
         const openForInstrument = openPos.filter(p => p.instrument === instrument);
 
+        // Fetch ticker untuk spread filter — non-blocking, jika gagal spread filter pakai estimasi candle
+        const ticker = await getTicker(instrument, creds || {}).catch(() => null);
+
         // FIX: scanSignal hanya relevan saat autoPair ON dan instrument cocok.
         // Saat hasOpenPos, tidak perlu scanSignal untuk proses exit — cukup null
         // agar runCycle fokus ke exit check tanpa interference scanner arah entry.
@@ -247,6 +248,7 @@ export async function POST(req) {
           openPositions: openForInstrument,
           instrument,
           scanSignal   : scanSignalForCycle,
+          ticker,        // ← untuk spread filter real-time
         });
 
         // ── Process exits ──────────────────────────────────────────────────
