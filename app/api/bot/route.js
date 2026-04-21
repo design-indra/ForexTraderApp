@@ -163,11 +163,21 @@ export async function POST(req) {
         const hasOpenPos  = openPos.length > 0;
 
         // ── Tentukan instrument yang digunakan ──────────────────────────────
+        // FIX: Jika ada posisi terbuka saat autoPair ON, SELALU gunakan instrument
+        // dari posisi terbuka — jangan scan pair baru. Scanner hanya untuk entry baru.
         let instrument = config?.instrument || state.instrument || 'EUR_USD';
         let scanData   = null;
 
-        if (autoPair && !hasOpenPos) {
-          // Re-scan jika sudah lewat interval ATAU dipaksa
+        if (autoPair && hasOpenPos) {
+          // === CASE 1: Ada posisi terbuka — fokus monitor exit posisi ini ===
+          // Ambil instrument dari posisi terbuka pertama
+          instrument = openPos[0].instrument;
+          state.currentPair = instrument;
+          // Pakai lastScanResult jika ada (tidak perlu scan ulang saat ada posisi)
+          scanData = lastScanResult;
+
+        } else if (autoPair && !hasOpenPos) {
+          // === CASE 2: Tidak ada posisi — scan pair terbaik untuk entry baru ===
           const needScan = (Date.now() - lastScanTime) > SCAN_INTERVAL_MS;
           if (needScan || !lastScanResult) {
             scanData       = await scanAllPairs(tf, creds || {});
@@ -180,7 +190,6 @@ export async function POST(req) {
           // Ambil pair terbaik dari scan
           if (scanData?.best && scanData.best.action !== 'HOLD') {
             instrument = scanData.best.instrument;
-            // Update state bot dengan pair aktif saat ini
             state.currentPair = instrument;
           } else {
             // Tidak ada sinyal kuat — skip cycle ini
@@ -197,8 +206,8 @@ export async function POST(req) {
         const granularity = TF_MAP[tf] || 'M5';
 
         // ── Fetch candles ──────────────────────────────────────────────────
-        // Jika autoPair dan sudah punya candles dari scan, pakai itu
-        let candles = scanData?.best?.instrument === instrument
+        // Gunakan candles dari scan hanya jika instrument cocok dan belum ada posisi terbuka
+        let candles = (!hasOpenPos && scanData?.best?.instrument === instrument)
           ? scanData?.best?.candles
           : null;
 
@@ -221,19 +230,23 @@ export async function POST(req) {
         }
 
         const riskCfg  = getRiskSettings();
+        // FIX: Filter posisi berdasarkan instrument yang BENAR (instrument dari posisi terbuka)
         const openForInstrument = openPos.filter(p => p.instrument === instrument);
+
+        // FIX: scanSignal hanya relevan saat autoPair ON dan instrument cocok.
+        // Saat hasOpenPos, tidak perlu scanSignal untuk proses exit — cukup null
+        // agar runCycle fokus ke exit check tanpa interference scanner arah entry.
+        const scanSignalForCycle = (autoPair && !hasOpenPos && scanData?.best?.instrument === instrument)
+          ? { action: scanData.best.action, score: scanData.best.score, delta: scanData.best.delta }
+          : null;
 
         const decision = await runCycle(candles, {
           balance      : demo.usdBalance,
           startBalance : demo.startBalance  || 10000,
           targetBalance: riskCfg.targetProfitUSD || 500,
           openPositions: openForInstrument,
-          instrument,   // ← instrument aktif (dari scanner atau config)
-          scanSignal   : autoPair && scanData?.best?.instrument === instrument ? {
-            action: scanData.best.action,
-            score : scanData.best.score,
-            delta : scanData.best.delta,
-          } : null,
+          instrument,
+          scanSignal   : scanSignalForCycle,
         });
 
         // ── Process exits ──────────────────────────────────────────────────
@@ -273,8 +286,12 @@ export async function POST(req) {
             continue;
           }
           if (state.mode === 'demo') {
-            const result = demoClose(exitDec.position.id, close, exitDec.reason);
-            if (result.success) recordTradeResult(result.trade.pnlUSD, result.trade.pnlPips, instrument);
+            // FIX: gunakan exitDec.position.instrument untuk closePrice yang akurat
+            const exitClosePrice = exitDec.position.instrument === instrument
+              ? close
+              : (exitDec.position.currentPrice || close);
+            const result = demoClose(exitDec.position.id, exitClosePrice, exitDec.reason);
+            if (result.success) recordTradeResult(result.trade.pnlUSD, result.trade.pnlPips, exitDec.position.instrument);
           } else {
             try {
               await closeTrade(exitDec.position.monexTradeId || exitDec.position.id, creds || {});
