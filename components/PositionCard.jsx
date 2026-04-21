@@ -7,15 +7,25 @@ function fmtPrice(n, instrument = '') {
 }
 function fmtPips(n) { return (n >= 0 ? '+' : '') + (n || 0).toFixed(1) + 'p'; }
 
-function fmtIDR(usd) {
+// USD — tampilan utama PnL
+function fmtUSD(usd) {
+  const n    = usd || 0;
+  const sign = n >= 0 ? '+' : '-';
+  const abs  = Math.abs(n);
+  if (abs >= 1000) return `${sign}$${(abs / 1000).toFixed(2)}K`;
+  return `${sign}$${abs.toFixed(2)}`;
+}
+
+// IDR — tampilan sekunder (kecil)
+function fmtIDRCompact(usd) {
   try {
     const rate = parseInt(localStorage.getItem('ft_idr_rate') || '16000');
     const idr  = Math.round((usd || 0) * rate);
     const sign = usd >= 0 ? '+' : '';
-    if (Math.abs(idr) >= 1_000_000) return `${sign}Rp ${(idr / 1_000_000).toFixed(2)}jt`;
+    if (Math.abs(idr) >= 1_000_000) return `${sign}Rp ${(idr / 1_000_000).toFixed(1)}jt`;
     if (Math.abs(idr) >= 1_000)    return `${sign}Rp ${(idr / 1_000).toFixed(0)}rb`;
-    return `${sign}Rp ${idr.toLocaleString('id-ID')}`;
-  } catch { return (usd >= 0 ? '+' : '') + '$' + Math.abs(usd || 0).toFixed(2); }
+    return `${sign}Rp ${Math.abs(idr).toLocaleString('id-ID')}`;
+  } catch { return fmtUSD(usd); }
 }
 
 // Pip size per instrument
@@ -27,7 +37,7 @@ function getPipSize(instrument) {
   return 0.0001;
 }
 
-// Pip value USD per 1 lot per instrument
+// Pip value USD per 1 standard lot
 function getPipValuePerLot(instrument) {
   if (!instrument) return 10;
   if (instrument.includes('JPY')) return 9.30;
@@ -37,31 +47,34 @@ function getPipValuePerLot(instrument) {
 }
 
 export default function PositionCard({ position, currentPrice }) {
-  const isBuy    = position.direction === 'buy';
-  const lots     = position.lots || 0.01;
+  const isBuy = position.direction === 'buy';
+  const lots  = position.lots || 0.01;
 
-  // Pakai unrealizedPnl/Pips dari demoStore kalau sudah ada (lebih akurat)
-  // Fallback hitung manual jika belum ada (misal posisi baru dibuka)
+  // Gunakan unrealizedPnl dari demoStore (sudah benar) jika ada
+  // Fallback: hitung manual dengan formula standar
   let pnlPips, pnlUSD;
   if (position.unrealizedPnl !== undefined && position.unrealizedPips !== undefined) {
     pnlPips = position.unrealizedPips;
     pnlUSD  = position.unrealizedPnl;
   } else {
+    const cp  = currentPrice || position.entryPrice;
     const pip = getPipSize(position.instrument);
     pnlPips   = isBuy
-      ? (currentPrice - position.entryPrice) / pip
-      : (position.entryPrice - currentPrice) / pip;
-    pnlUSD    = parseFloat((pnlPips * lots * getPipValuePerLot(position.instrument)).toFixed(2));
+      ? (cp - position.entryPrice) / pip
+      : (position.entryPrice - cp) / pip;
+    // Formula benar: pips × lots × pip_value_per_lot
+    pnlUSD = parseFloat((pnlPips * lots * getPipValuePerLot(position.instrument)).toFixed(2));
   }
 
   const isProfit = pnlPips >= 0;
   const holdMins = Math.round((Date.now() - position.openTime) / 60000);
 
   // Progress to TP
-  const tpDist   = Math.abs(position.takeProfit - position.entryPrice);
-  const curDist  = isBuy
-    ? currentPrice - position.entryPrice
-    : position.entryPrice - currentPrice;
+  const cp2     = currentPrice || position.entryPrice;
+  const tpDist  = Math.abs(position.takeProfit - position.entryPrice);
+  const curDist = isBuy
+    ? cp2 - position.entryPrice
+    : position.entryPrice - cp2;
   const progress = tpDist > 0 ? Math.max(0, Math.min(100, (curDist / tpDist) * 100)) : 0;
 
   return (
@@ -80,13 +93,13 @@ export default function PositionCard({ position, currentPrice }) {
           </div>
         </div>
         <div className="text-right">
-          {/* PnL dalam IDR — utama */}
+          {/* PnL USD — tampilan utama */}
           <div className={`font-bold text-base mono ${isProfit ? 'text-emerald-400' : 'text-red-400'}`}>
-            {fmtIDR(pnlUSD)}
+            {fmtUSD(pnlUSD)}
           </div>
-          {/* Pips + USD kecil di bawah */}
+          {/* Pips + IDR kecil di bawah */}
           <div className={`text-xs mono ${isProfit ? 'text-emerald-600' : 'text-red-600'}`}>
-            {fmtPips(pnlPips)} · {(pnlUSD >= 0 ? '+' : '')}${Math.abs(pnlUSD).toFixed(2)}
+            {fmtPips(pnlPips)} · {fmtIDRCompact(pnlUSD)}
           </div>
         </div>
       </div>

@@ -45,12 +45,46 @@ const fmtIDRCompact = (usd, rate = DEFAULT_IDR_RATE) => {
   if (Math.abs(idr) >= 1_000)    return `Rp ${(idr / 1_000).toFixed(0)}rb`;
   return `Rp ${idr.toLocaleString('id-ID')}`;
 };
+// USD formatters — untuk PnL & saldo utama
+const fmtUSD = (usd) => {
+  const n = usd || 0;
+  return `$${Math.abs(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+};
+const fmtUSDCompact = (usd) => {
+  const n = usd || 0;
+  const sign = n >= 0 ? '' : '-';
+  const abs  = Math.abs(n);
+  if (abs >= 1000) return `${sign}$${(abs / 1000).toFixed(2)}K`;
+  return `${sign}$${abs.toFixed(2)}`;
+};
+const fmtPnlUSD = (usd) => {
+  const n = usd || 0;
+  const sign = n >= 0 ? '+' : '-';
+  const abs  = Math.abs(n);
+  if (abs >= 1000) return `${sign}$${(abs / 1000).toFixed(2)}K`;
+  return `${sign}$${abs.toFixed(2)}`;
+};
 const fmtPct   = (n) => `${n >= 0 ? '+' : ''}${(n || 0).toFixed(2)}%`;
 const fmtPips  = (n) => `${n >= 0 ? '+' : ''}${(n || 0).toFixed(1)}p`;
 const fmtPrice = (n, inst='') => (n||0).toFixed(inst.includes('JPY') ? 3 : 5);
 const fmtPnlIDR = (usd, rate) => {
   const sign = usd >= 0 ? '+' : '';
   return `${sign}${fmtIDR(usd, rate)}`;
+};
+// USD formatters — dipakai untuk PnL & saldo sekunder
+const fmtUSDCompact = (usd) => {
+  const n = usd || 0;
+  const sign = n >= 0 ? '' : '-';
+  const abs  = Math.abs(n);
+  if (abs >= 1000) return `${sign}$${(abs / 1000).toFixed(2)}K`;
+  return `${sign}$${abs.toFixed(2)}`;
+};
+const fmtPnlUSD = (usd) => {
+  const n = usd || 0;
+  const sign = n >= 0 ? '+' : '-';
+  const abs  = Math.abs(n);
+  if (abs >= 1000) return `${sign}$${(abs / 1000).toFixed(2)}K`;
+  return `${sign}$${abs.toFixed(2)}`;
 };
 
 // ─── Pair Selector ─────────────────────────────────────────────────────────────
@@ -495,18 +529,18 @@ export default function Dashboard({ userEmail = '', onLogout }) {
               </div>
             )}
 
-            {/* Balance + PnL — tampilan IDR */}
+            {/* Balance + PnL — Saldo IDR, P&L dalam USD */}
             <div className="grid grid-cols-2 gap-2">
               <StatCard
                 label={`Saldo ${config.mode.toUpperCase()}`}
                 value={fmtIDRCompact(totalBal, idrRate)}
-                sub={`Modal: ${fmtIDRCompact(startBal, idrRate)}`}
+                sub={`≈ ${fmtUSDCompact(totalBal)}`}
                 color="#e2e8f0"
                 icon="💰"
               />
               <StatCard
                 label="Total P&L"
-                value={fmtIDRCompact(totalPnl, idrRate)}
+                value={fmtPnlUSD(totalPnl)}
                 sub={fmtPct(pnlPct)}
                 color={totalPnl >= 0 ? '#10b981' : '#ef4444'}
                 icon={totalPnl >= 0 ? '📈' : '📉'}
@@ -535,7 +569,7 @@ export default function Dashboard({ userEmail = '', onLogout }) {
               <div className="rounded-2xl border border-slate-700 p-3" style={{ background:'var(--surface-2)' }}>
                 <div className="flex justify-between text-xs mb-2">
                   <span className="text-slate-500">Target Profit</span>
-                  <span className="text-slate-300">{fmtIDRCompact(totalPnl, idrRate)} / {fmtIDRCompact(target, idrRate)}</span>
+                  <span className="text-slate-300">{fmtPnlUSD(totalPnl)} / ${target.toFixed(0)}</span>
                 </div>
                 <div className="h-2 bg-slate-700 rounded-full overflow-hidden">
                   <div className="h-full rounded-full transition-all duration-500" style={{ width:`${progress}%`, background:'linear-gradient(90deg,#10b981,#059669)' }}/>
@@ -999,12 +1033,14 @@ export default function Dashboard({ userEmail = '', onLogout }) {
             <div className="rounded-2xl border border-slate-700 p-4" style={{ background:'var(--surface-2)' }}>
               <h3 className="text-sm font-bold text-slate-100 mb-1">Reset Demo Balance</h3>
               <p className="text-xs text-slate-500 mb-3">Pilih modal awal (IDR)</p>
-              <div className="grid grid-cols-2 gap-2">
+              <div className="grid grid-cols-3 gap-2">
                 {[
-                  { usd: 625,   label: 'Rp 10jt'  },
-                  { usd: 1562,  label: 'Rp 25jt'  },
-                  { usd: 3125,  label: 'Rp 50jt'  },
-                  { usd: 6250,  label: 'Rp 100jt' },
+                  { usd: 31.25,  label: 'Rp 500rb' },
+                  { usd: 62.5,   label: 'Rp 1jt'   },
+                  { usd: 125,    label: 'Rp 2jt'    },
+                  { usd: 312.5,  label: 'Rp 5jt'    },
+                  { usd: 625,    label: 'Rp 10jt'   },
+                  { usd: 1562,   label: 'Rp 25jt'   },
                 ].map(({ usd, label }) => (
                   <button key={label} onClick={() => handleAction('reset', { balance: usd })}
                     className="py-2 bg-slate-700 hover:bg-slate-600 text-slate-300 rounded-xl text-xs font-medium">
