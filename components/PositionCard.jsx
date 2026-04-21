@@ -18,13 +18,42 @@ function fmtIDR(usd) {
   } catch { return (usd >= 0 ? '+' : '') + '$' + Math.abs(usd || 0).toFixed(2); }
 }
 
+// Pip size per instrument
+function getPipSize(instrument) {
+  if (!instrument) return 0.0001;
+  if (instrument.includes('JPY')) return 0.01;
+  if (instrument === 'XAU_USD')   return 0.10;
+  if (instrument === 'XAG_USD')   return 0.01;
+  return 0.0001;
+}
+
+// Pip value USD per 1 lot per instrument
+function getPipValuePerLot(instrument) {
+  if (!instrument) return 10;
+  if (instrument.includes('JPY')) return 9.30;
+  if (instrument === 'XAU_USD')   return 100.0;
+  if (instrument === 'XAG_USD')   return 50.0;
+  return 10.0;
+}
+
 export default function PositionCard({ position, currentPrice }) {
   const isBuy    = position.direction === 'buy';
-  const pip      = position.instrument?.includes('JPY') ? 0.01 : 0.0001;
-  const pnlPips  = isBuy
-    ? (currentPrice - position.entryPrice) / pip
-    : (position.entryPrice - currentPrice) / pip;
-  const pnlUSD   = pnlPips * (position.lots || 0.01) * 10 * 0.01;
+  const lots     = position.lots || 0.01;
+
+  // Pakai unrealizedPnl/Pips dari demoStore kalau sudah ada (lebih akurat)
+  // Fallback hitung manual jika belum ada (misal posisi baru dibuka)
+  let pnlPips, pnlUSD;
+  if (position.unrealizedPnl !== undefined && position.unrealizedPips !== undefined) {
+    pnlPips = position.unrealizedPips;
+    pnlUSD  = position.unrealizedPnl;
+  } else {
+    const pip = getPipSize(position.instrument);
+    pnlPips   = isBuy
+      ? (currentPrice - position.entryPrice) / pip
+      : (position.entryPrice - currentPrice) / pip;
+    pnlUSD    = parseFloat((pnlPips * lots * getPipValuePerLot(position.instrument)).toFixed(2));
+  }
+
   const isProfit = pnlPips >= 0;
   const holdMins = Math.round((Date.now() - position.openTime) / 60000);
 
