@@ -731,9 +731,11 @@ export default function Dashboard({ userEmail = '', onLogout }) {
                       ? <span>🔍 Scanner Signal</span>
                       : <span>Level {signal.level || config.level} · {currentLevel.label}</span>
                     }
-                    {signal.boostedByScan     && <span className="text-amber-400">⚡ Boosted</span>}
-                    {signal.overriddenByScan  && <span className="text-purple-400">🔄 Override</span>}
-                    {signal.sessionBlocked    && <span className="text-orange-400">🕐 Sesi Sepi</span>}
+                    {signal.boostedByScan      && signal.scannerAgreement && <span className="text-amber-400">✅ Konfirmasi</span>}
+                    {signal.boostedByScan      && !signal.scannerAgreement && <span className="text-amber-400">⚡ Boosted</span>}
+                    {signal.overriddenByScan   && !signal.levelConflict    && <span className="text-purple-400">🔄 Override</span>}
+                    {signal.levelConflict      && <span className="text-orange-500">⚠️ Konflik→Scanner</span>}
+                    {signal.sessionBlocked     && <span className="text-orange-400">🕐 Sesi Sepi</span>}
                   </div>
                 </div>
 
