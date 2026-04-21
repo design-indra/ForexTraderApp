@@ -71,21 +71,7 @@ const fmtPnlIDR = (usd, rate) => {
   const sign = usd >= 0 ? '+' : '';
   return `${sign}${fmtIDR(usd, rate)}`;
 };
-// USD formatters — dipakai untuk PnL & saldo sekunder
-const fmtUSDCompact = (usd) => {
-  const n = usd || 0;
-  const sign = n >= 0 ? '' : '-';
-  const abs  = Math.abs(n);
-  if (abs >= 1000) return `${sign}$${(abs / 1000).toFixed(2)}K`;
-  return `${sign}$${abs.toFixed(2)}`;
-};
-const fmtPnlUSD = (usd) => {
-  const n = usd || 0;
-  const sign = n >= 0 ? '+' : '-';
-  const abs  = Math.abs(n);
-  if (abs >= 1000) return `${sign}$${(abs / 1000).toFixed(2)}K`;
-  return `${sign}$${abs.toFixed(2)}`;
-};
+
 
 // ─── Pair Selector ─────────────────────────────────────────────────────────────
 function PairSelector({ value, onChange }) {
