@@ -559,22 +559,37 @@ export default function Dashboard({ userEmail = '', onLogout }) {
               />
             </div>
 
-            {/* Stats row */}
-            <div className="grid grid-cols-3 gap-2">
-              <StatCard label="Trades" value={demo.tradeCount || 0} icon="🔢"/>
-              <StatCard
-                label="Win Rate"
-                value={bot.stats?.totalTrades > 0 ? `${bot.stats.winRate?.toFixed(0)}%` : '-'}
-                color={bot.stats?.winRate >= 50 ? '#10b981' : '#ef4444'}
-                icon="🎯"
-              />
-              <StatCard
-                label="Streak"
-                value={bot.consecutiveWins > 0 ? `W${bot.consecutiveWins}` : bot.consecutiveLosses > 0 ? `L${bot.consecutiveLosses}` : '-'}
-                color={bot.consecutiveWins > 0 ? '#10b981' : bot.consecutiveLosses > 0 ? '#ef4444' : '#94a3b8'}
-                icon="🔥"
-              />
-            </div>
+            {/* Stats row — dihitung dari closedTrades agar tidak reset saat server restart */}
+            {(() => {
+              const trades     = demo.closedTrades || [];
+              const totalCount = trades.length;
+              const winCount   = trades.filter(t => (t.pnlUSD || 0) > 0).length;
+              const winRatePct = totalCount > 0 ? (winCount / totalCount) * 100 : null;
+              let wStreak = 0, lStreak = 0;
+              for (const t of trades) {
+                if ((t.pnlUSD || 0) > 0) { if (lStreak === 0) wStreak++; else break; }
+                else                      { if (wStreak === 0) lStreak++; else break; }
+              }
+              const streakVal   = wStreak > 0 ? `W${wStreak}` : lStreak > 0 ? `L${lStreak}` : '-';
+              const streakColor = wStreak > 0 ? '#10b981' : lStreak > 0 ? '#ef4444' : '#94a3b8';
+              return (
+                <div className="grid grid-cols-3 gap-2">
+                  <StatCard label="Trades" value={totalCount} icon="🔢"/>
+                  <StatCard
+                    label="Win Rate"
+                    value={winRatePct !== null ? `${winRatePct.toFixed(0)}%` : '-'}
+                    color={winRatePct !== null && winRatePct >= 50 ? '#10b981' : '#ef4444'}
+                    icon="🎯"
+                  />
+                  <StatCard
+                    label="Streak"
+                    value={streakVal}
+                    color={streakColor}
+                    icon="🔥"
+                  />
+                </div>
+              );
+            })()}
 
             {/* Progress bar — dalam IDR */}
             {target > 0 && (
