@@ -16,8 +16,9 @@ export default function LoginScreen({ onLogin }) {
       const res  = await fetch('/api/auth', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ email, password }) });
       const data = await res.json();
       if (data.success) {
-        sessionStorage.setItem('ft_token', data.token);
-        sessionStorage.setItem('ft_email', data.email);
+        // FIX: localStorage agar sesi tidak hilang saat app ditutup
+        localStorage.setItem('ft_token', data.token);
+        localStorage.setItem('ft_email', data.email);
         onLogin(data.email);
       } else {
         setError(data.error || 'Login gagal');

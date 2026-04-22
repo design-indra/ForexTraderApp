@@ -250,6 +250,19 @@ export default function Dashboard({ userEmail = '', onLogout }) {
 
   useEffect(() => { fetchLiveBalance(); }, [config.mode, fetchLiveBalance]);
 
+  // Sync perubahan config ke server-side autocycle jika bot sedang running
+  useEffect(() => {
+    if (botData?.bot?.running) {
+      fetch('/api/autocycle', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'update-config',
+          config: { tf: config.tf, autoPair: config.autoPair, instrument: config.instrument },
+        }),
+      }).catch(() => {});
+    }
+  }, [config.tf, config.autoPair, config.instrument, botData?.bot?.running]);
+
   // Wake lock
   useEffect(() => {
     async function wl() { if (!('wakeLock' in navigator)) return; try { wakeLockRef.current = await navigator.wakeLock.request('screen'); } catch {} }
@@ -293,6 +306,28 @@ export default function Dashboard({ userEmail = '', onLogout }) {
     return () => clearInterval(cycleRef.current);
   }, [botData?.bot?.running, config.instrument, config.tf, config.autoPair, saveDemoState]);
 
+  // ── Auto Cycle: start/stop server-side background cycle ──────────────────
+  const startAutoCycle = async () => {
+    try {
+      await fetch('/api/autocycle', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'start',
+          config: { tf: config.tf, autoPair: config.autoPair, instrument: config.instrument },
+        }),
+      });
+    } catch {}
+  };
+
+  const stopAutoCycle = async () => {
+    try {
+      await fetch('/api/autocycle', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'stop' }),
+      });
+    } catch {}
+  };
+
   const handleAction = async (action, extra = {}) => {
     setActionLoading(true);
     try {
@@ -309,6 +344,15 @@ export default function Dashboard({ userEmail = '', onLogout }) {
       }).then(r => r.json());
       if (d.requireConfirmation) { setLiveConfirm(true); return; }
       if (d.demo) saveDemoState(d.demo);
+
+      // Saat bot start → nyalakan server-side autocycle
+      // Saat bot stop/reset → matikan autocycle
+      if (action === 'start' && !d.requireConfirmation) {
+        await startAutoCycle();
+      } else if (action === 'stop' || action === 'reset') {
+        await stopAutoCycle();
+      }
+
       await fetchBot();
     } catch {} finally { setActionLoading(false); }
   };

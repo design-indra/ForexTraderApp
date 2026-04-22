@@ -9,16 +9,17 @@ export default function Home() {
   const [checking, setChecking] = useState(true);
 
   useEffect(() => {
-    const token = sessionStorage.getItem('ft_token');
-    const user  = sessionStorage.getItem('ft_email');
+    // FIX: pakai localStorage agar token persist saat app ditutup/refresh
+    const token = localStorage.getItem('ft_token');
+    const user  = localStorage.getItem('ft_email');
     if (token) { setAuthed(true); setEmail(user || ''); }
     setChecking(false);
   }, []);
 
   const handleLogin  = (em) => { setAuthed(true); setEmail(em); };
   const handleLogout = ()   => {
-    sessionStorage.removeItem('ft_token');
-    sessionStorage.removeItem('ft_email');
+    localStorage.removeItem('ft_token');
+    localStorage.removeItem('ft_email');
     setAuthed(false);
   };
 
