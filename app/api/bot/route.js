@@ -208,13 +208,9 @@ export async function POST(req) {
 
         const granularity = TF_MAP[tf] || 'M5';
 
-        // FIX: Selalu fetch candles segar — jangan reuse dari scanner (bisa 30 detik stale)
-        // Candles stale = sinyal stale = entry di harga yang sudah berubah
-        let candles = null;
-
-        if (!candles || candles.length < 30) {
-          candles = await getOHLCV(instrument, granularity, 100, creds || {});
-        }
+        // Selalu fetch candles segar — candles dari scanner bisa 30 detik stale
+        // BUG 7 FIX: hapus kondisi if (!candles) yang selalu true karena candles = null
+        const candles = await getOHLCV(instrument, granularity, 100, creds || {});
 
         if (!candles || candles.length < 30) {
           return NextResponse.json({ success: false, error: 'Insufficient candle data' });
@@ -277,10 +273,14 @@ export async function POST(req) {
             demo.usdBalance  = parseFloat((demo.usdBalance + trade.pnlUSD).toFixed(2));
             demo.totalPnl    = parseFloat((demo.totalPnl   + trade.pnlUSD).toFixed(2));
             demo.totalPnlPct = parseFloat(((demo.totalPnl / demo.startBalance) * 100).toFixed(2));
+            // FIX BUG 4: tradeCount harus bertambah saat partial TP
+            demo.tradeCount  = (demo.tradeCount || 0) + 1;
             const idx = demo.openPositions.findIndex(p => p.id === pos.id);
             if (idx !== -1) {
               demo.openPositions[idx] = { ...demo.openPositions[idx], lots: halfLots, tp1Triggered: true };
             }
+            // FIX BUG 4: record ke tradingEngine stats dan trigger recordTradeResult
+            recordTradeResult(trade.pnlUSD, trade.pnlPips, pos.instrument);
             continue;
           }
           if (exitDec.isBreakeven) {
