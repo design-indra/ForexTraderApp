@@ -196,14 +196,22 @@ export default function Dashboard({ userEmail = '', onLogout }) {
     setLocalDemo(demo);
   }, []);
 
-  const fetchBot = useCallback(async (clientState = null) => {
+  const fetchBot = useCallback(async () => {
     try {
-      const body = clientState ? { action:'sync', clientState } : undefined;
-      const res  = body
-        ? await fetch('/api/bot', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) })
-        : await fetch('/api/bot');
+      // SELALU kirim clientState agar server Vercel (stateless) bisa restore openPositions
+      const storedDemo  = (() => { try { const s = localStorage.getItem('ft_demo'); return s ? JSON.parse(s) : null; } catch { return null; } })();
+      const res = await fetch('/api/bot', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'sync', clientState: storedDemo }),
+      });
       const d = await res.json();
-      if (d.success) { setBotData(d); if (d.demo) saveDemoState(d.demo); if (d.scanResult) setScanResult(d.scanResult); }
+      if (d.success) {
+        // Merge: openPositions dari server (sudah restore clientState) adalah sumber kebenaran
+        setBotData(d);
+        if (d.demo) saveDemoState(d.demo);
+        if (d.scanResult) setScanResult(d.scanResult);
+      }
     } catch {} finally { setLoading(false); }
   }, [saveDemoState]);
 
@@ -266,17 +274,19 @@ export default function Dashboard({ userEmail = '', onLogout }) {
             }),
           });
           const d = await res.json();
-          if (d.success) {
-              if (d.demo) saveDemoState(d.demo);
-              if (d.scanResult) setScanResult(d.scanResult);
-              setBotData(prev => {
-                if (!prev) return prev;
-                const updated = { ...prev };
-                if (d.demo)  updated.demo = d.demo;
-                if (d.bot)   updated.bot  = { ...prev.bot, ...d.bot };
-                return updated;
-              });
-            }
+          if (d.success && !d.skipped) {
+            // Langsung update state dari response cycle — jangan tunggu fetchBot
+            if (d.demo) saveDemoState(d.demo);
+            if (d.scanResult) setScanResult(d.scanResult);
+            setBotData(prev => {
+              if (!prev) return prev;
+              return {
+                ...prev,
+                demo: d.demo || prev.demo,
+                bot : d.bot ? { ...prev.bot, ...d.bot } : prev.bot,
+              };
+            });
+          }
         } catch {}
       }, 5000);
     } else clearInterval(cycleRef.current);
@@ -346,10 +356,26 @@ export default function Dashboard({ userEmail = '', onLogout }) {
   // ── Derived state ────────────────────────────────────────────────────────────
   const bot        = botData?.bot  || {};
   const serverDemo = botData?.demo || {};
-  // FIX: openPositions dan closedTrades SELALU dari server (data real-time + unrealizedPnl akurat)
-  // localDemo hanya untuk balance/totalPnl saat server belum respond
-  const demo       = localDemo
-    ? { ...serverDemo, ...localDemo, openPositions: serverDemo.openPositions ?? localDemo.openPositions, closedTrades: serverDemo.closedTrades ?? localDemo.closedTrades }
+  // FIXED: openPositions dari server (sudah di-restore via clientState di fetchBot/cycle)
+  // Fallback ke localDemo hanya jika server benar-benar tidak punya data (null/undefined)
+  // JANGAN pakai ?? karena [] (array kosong) bukan null - akan overwrite posisi yang ada
+  const mergePositions = (serverPos, localPos) => {
+    if (serverPos && serverPos.length > 0) return serverPos;   // server punya data → pakai server
+    if (localPos  && localPos.length  > 0) return localPos;    // server kosong tapi local ada → pakai local
+    return [];                                                   // keduanya kosong
+  };
+  const mergeTrades = (serverTrades, localTrades) => {
+    if (serverTrades && serverTrades.length > 0) return serverTrades;
+    if (localTrades  && localTrades.length  > 0) return localTrades;
+    return [];
+  };
+  const demo = localDemo
+    ? {
+        ...serverDemo,
+        ...localDemo,
+        openPositions: mergePositions(serverDemo.openPositions, localDemo.openPositions),
+        closedTrades : mergeTrades(serverDemo.closedTrades,  localDemo.closedTrades),
+      }
     : serverDemo;
   const logs       = botData?.logs || [];
   const ticker     = marketData?.ticker     || {};

@@ -67,24 +67,27 @@ export async function POST(req) {
   const { action, config, clientState, brokerCredentials } = body;
 
   // ── Restore client state ─────────────────────────────────────────────────────
+  // FIXED: Restore clientState tanpa syarat usdBalance — openPositions wajib di-restore
+  // supaya Vercel stateless tidak kehilangan posisi terbuka
   if (clientState) {
     const demo = getDemoState();
-    if (clientState.usdBalance !== undefined) {
-      demo.usdBalance        = clientState.usdBalance;
-      demo.startBalance      = clientState.startBalance      || demo.startBalance;
-      demo.totalPnl          = clientState.totalPnl          || 0;
-      demo.totalPnlPct       = clientState.totalPnlPct       || 0;
-      demo.tradeCount        = clientState.tradeCount        || 0;
-      demo.consecutiveLosses = clientState.consecutiveLosses || 0;
-      demo.consecutiveWins   = clientState.consecutiveWins   || 0;
-      if (Array.isArray(clientState.openPositions)) demo.openPositions = clientState.openPositions;
-      if (Array.isArray(clientState.closedTrades)) {
-        const existing = new Set(demo.closedTrades.map(t => t.id));
-        for (const t of clientState.closedTrades) {
-          if (!existing.has(t.id)) { demo.closedTrades.unshift(t); existing.add(t.id); }
-        }
-        demo.closedTrades = demo.closedTrades.slice(0, 200);
+    // Restore numerik hanya jika ada
+    if (clientState.usdBalance  !== undefined) demo.usdBalance        = clientState.usdBalance;
+    if (clientState.startBalance !== undefined) demo.startBalance      = clientState.startBalance;
+    if (clientState.totalPnl    !== undefined) demo.totalPnl          = clientState.totalPnl;
+    if (clientState.totalPnlPct !== undefined) demo.totalPnlPct       = clientState.totalPnlPct;
+    if (clientState.tradeCount  !== undefined) demo.tradeCount        = clientState.tradeCount;
+    if (clientState.consecutiveLosses !== undefined) demo.consecutiveLosses = clientState.consecutiveLosses;
+    if (clientState.consecutiveWins   !== undefined) demo.consecutiveWins   = clientState.consecutiveWins;
+    // ALWAYS restore openPositions — ini kritis untuk Vercel stateless
+    if (Array.isArray(clientState.openPositions)) demo.openPositions = clientState.openPositions;
+    // Merge closedTrades (hindari duplikat)
+    if (Array.isArray(clientState.closedTrades)) {
+      const existing = new Set(demo.closedTrades.map(t => t.id));
+      for (const t of clientState.closedTrades) {
+        if (!existing.has(t.id)) { demo.closedTrades.unshift(t); existing.add(t.id); }
       }
+      demo.closedTrades = demo.closedTrades.slice(0, 200);
     }
   }
 
