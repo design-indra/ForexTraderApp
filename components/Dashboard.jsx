@@ -343,6 +343,8 @@ export default function Dashboard({ userEmail = '', onLogout }) {
         }),
       }).then(r => r.json());
       if (d.requireConfirmation) { setLiveConfirm(true); return; }
+      // FIX: saat reset, hapus dulu localDemo lama dari localStorage
+      // agar state server yang fresh tidak di-override oleh data lama
       if (action === 'reset') {
         try { localStorage.removeItem('ft_demo'); } catch {}
         setLocalDemo(null);
@@ -364,13 +366,7 @@ export default function Dashboard({ userEmail = '', onLogout }) {
   const handleDeleteTrade = async (tradeId) => {
     const storedDemo = (() => { try { const s = localStorage.getItem('ft_demo'); return s ? JSON.parse(s) : null; } catch { return null; } })();
     const d = await fetch('/api/bot', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ action:'deleteTrade', config:{tradeId}, clientState: storedDemo }) }).then(r => r.json());
-    if (d.success && d.demo) {
-      try { localStorage.removeItem('ft_demo'); } catch {}
-      setLocalDemo(null);
-      saveDemoState(d.demo);
-      setBotData(prev => prev ? { ...prev, demo: d.demo } : prev);
-      if (d.scanResult) setScanResult(d.scanResult);
-    }
+    if (d.success && d.demo) { saveDemoState(d.demo); setBotData(prev => prev ? { ...prev, demo: d.demo } : prev); if (d.scanResult) setScanResult(d.scanResult); }
   };
 
   const handleClearHistory = async () => {
@@ -378,6 +374,7 @@ export default function Dashboard({ userEmail = '', onLogout }) {
     const storedDemo = (() => { try { const s = localStorage.getItem('ft_demo'); return s ? JSON.parse(s) : null; } catch { return null; } })();
     const d = await fetch('/api/bot', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ action:'clearHistory', clientState: storedDemo }) }).then(r => r.json());
     if (d.success && d.demo) {
+      // FIX: hapus localDemo lama dulu agar saldo ter-reset dengan benar
       try { localStorage.removeItem('ft_demo'); } catch {}
       setLocalDemo(null);
       saveDemoState(d.demo);
@@ -445,12 +442,11 @@ export default function Dashboard({ userEmail = '', onLogout }) {
   const isRunning  = bot.running;
   const isPaused   = bot.isPaused;
   const openPos    = demo.openPositions || [];
-  const totalBal   = isLive && liveBalance ? liveBalance.balance : parseFloat((startBal0 + totalPnl).toFixed(2));
-  // FIX: hitung langsung dari closedTrades agar tidak reset saat Railway redeploy
+  // FIX: hitung langsung dari closedTrades agar akurat meski Railway restart
+  const startBal   = demo.startBalance || 31.25;
   const totalPnl   = parseFloat(((demo.closedTrades||[]).reduce((s,t)=>s+(t.pnlUSD||0),0)).toFixed(2));
-  const startBal0  = demo.startBalance || 31.25;
-  const pnlPct     = startBal0 > 0 ? parseFloat(((totalPnl/startBal0)*100).toFixed(2)) : 0;
-  const startBal   = startBal0;
+  const pnlPct     = startBal > 0 ? parseFloat(((totalPnl/startBal)*100).toFixed(2)) : 0;
+  const totalBal   = isLive && liveBalance ? liveBalance.balance : parseFloat((startBal + totalPnl).toFixed(2));
   const target     = riskSettings?.targetProfitUSD || 500;
   const progress   = Math.min(100, Math.max(0, ((totalBal - startBal) / (target)) * 100));
   const currentLevel = LEVELS.find(l => l.id === (bot.level || config.level)) || LEVELS[0];
