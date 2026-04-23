@@ -343,6 +343,10 @@ export default function Dashboard({ userEmail = '', onLogout }) {
         }),
       }).then(r => r.json());
       if (d.requireConfirmation) { setLiveConfirm(true); return; }
+      if (action === 'reset') {
+        try { localStorage.removeItem('ft_demo'); } catch {}
+        setLocalDemo(null);
+      }
       if (d.demo) saveDemoState(d.demo);
 
       // Saat bot start → nyalakan server-side autocycle
@@ -360,14 +364,26 @@ export default function Dashboard({ userEmail = '', onLogout }) {
   const handleDeleteTrade = async (tradeId) => {
     const storedDemo = (() => { try { const s = localStorage.getItem('ft_demo'); return s ? JSON.parse(s) : null; } catch { return null; } })();
     const d = await fetch('/api/bot', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ action:'deleteTrade', config:{tradeId}, clientState: storedDemo }) }).then(r => r.json());
-    if (d.success && d.demo) { saveDemoState(d.demo); setBotData(prev => prev ? { ...prev, demo: d.demo } : prev); if (d.scanResult) setScanResult(d.scanResult); }
+    if (d.success && d.demo) {
+      try { localStorage.removeItem('ft_demo'); } catch {}
+      setLocalDemo(null);
+      saveDemoState(d.demo);
+      setBotData(prev => prev ? { ...prev, demo: d.demo } : prev);
+      if (d.scanResult) setScanResult(d.scanResult);
+    }
   };
 
   const handleClearHistory = async () => {
     if (!confirm('Hapus semua riwayat trade?')) return;
     const storedDemo = (() => { try { const s = localStorage.getItem('ft_demo'); return s ? JSON.parse(s) : null; } catch { return null; } })();
     const d = await fetch('/api/bot', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ action:'clearHistory', clientState: storedDemo }) }).then(r => r.json());
-    if (d.success && d.demo) { saveDemoState(d.demo); setBotData(prev => prev ? { ...prev, demo: d.demo } : prev); if (d.scanResult) setScanResult(d.scanResult); }
+    if (d.success && d.demo) {
+      try { localStorage.removeItem('ft_demo'); } catch {}
+      setLocalDemo(null);
+      saveDemoState(d.demo);
+      setBotData(prev => prev ? { ...prev, demo: d.demo } : prev);
+      if (d.scanResult) setScanResult(d.scanResult);
+    }
   };
 
   const saveRiskSettings = async (newSettings) => {

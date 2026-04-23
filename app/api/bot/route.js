@@ -9,7 +9,7 @@ import {
 } from '../../../lib/tradingEngine.js';
 import {
   getDemoState, resetDemo, demoOpen, demoClose,
-  updatePositions, setStartBalance,
+  updatePositions, setStartBalance, saveState as saveDemoState, saveState as saveDemoState,
 } from '../../../lib/demoStore.js';
 import { getOHLCV, openTrade, closeTrade, getTicker } from '../../../lib/monex.js';
 import { getRiskSettings } from '../../../lib/riskManager.js';
@@ -129,17 +129,25 @@ export async function POST(req) {
         const tradeId = config?.tradeId;
         if (tradeId) {
           demo.closedTrades = demo.closedTrades.filter(t => t.id !== tradeId);
-          demo.totalPnl     = demo.closedTrades.reduce((s, t) => s + (t.pnlUSD || 0), 0);
+          demo.totalPnl     = parseFloat(demo.closedTrades.reduce((s,t)=>s+(t.pnlUSD||0),0).toFixed(2));
           demo.tradeCount   = demo.closedTrades.length;
-          demo.totalPnlPct  = demo.startBalance > 0 ? (demo.totalPnl / demo.startBalance) * 100 : 0;
+          demo.totalPnlPct  = demo.startBalance > 0 ? parseFloat(((demo.totalPnl/demo.startBalance)*100).toFixed(2)) : 0;
+          demo.usdBalance   = parseFloat((demo.startBalance + demo.totalPnl).toFixed(2));
+          saveDemoState();
         }
         return NextResponse.json({ success: true, demo: getDemoState() });
       }
 
       case 'clearHistory': {
         const demo = getDemoState();
-        demo.closedTrades = []; demo.totalPnl = 0;
-        demo.totalPnlPct  = 0;  demo.tradeCount = 0;
+        demo.closedTrades      = [];
+        demo.totalPnl          = 0;
+        demo.totalPnlPct       = 0;
+        demo.tradeCount        = 0;
+        demo.consecutiveWins   = 0;
+        demo.consecutiveLosses = 0;
+        demo.usdBalance        = demo.startBalance;
+        saveDemoState();
         return NextResponse.json({ success: true, demo: getDemoState() });
       }
 
