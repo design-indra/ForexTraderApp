@@ -9,7 +9,7 @@ import {
 } from '../../../lib/tradingEngine.js';
 import {
   getDemoState, resetDemo, demoOpen, demoClose,
-  updatePositions, setStartBalance, saveState as saveDemoState, saveState as saveDemoState,
+  updatePositions, setStartBalance, saveState as saveDemoState,
 } from '../../../lib/demoStore.js';
 import { getOHLCV, openTrade, closeTrade, getTicker } from '../../../lib/monex.js';
 import { getRiskSettings } from '../../../lib/riskManager.js';
