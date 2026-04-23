@@ -445,10 +445,12 @@ export default function Dashboard({ userEmail = '', onLogout }) {
   const isRunning  = bot.running;
   const isPaused   = bot.isPaused;
   const openPos    = demo.openPositions || [];
-  const totalBal   = isLive && liveBalance ? liveBalance.balance : (demo.usdBalance || 0);
-  const totalPnl   = demo.totalPnl || 0;
-  const pnlPct     = demo.totalPnlPct || 0;
-  const startBal   = demo.startBalance || 10000;
+  const totalBal   = isLive && liveBalance ? liveBalance.balance : parseFloat((startBal0 + totalPnl).toFixed(2));
+  // FIX: hitung langsung dari closedTrades agar tidak reset saat Railway redeploy
+  const totalPnl   = parseFloat(((demo.closedTrades||[]).reduce((s,t)=>s+(t.pnlUSD||0),0)).toFixed(2));
+  const startBal0  = demo.startBalance || 31.25;
+  const pnlPct     = startBal0 > 0 ? parseFloat(((totalPnl/startBal0)*100).toFixed(2)) : 0;
+  const startBal   = startBal0;
   const target     = riskSettings?.targetProfitUSD || 500;
   const progress   = Math.min(100, Math.max(0, ((totalBal - startBal) / (target)) * 100));
   const currentLevel = LEVELS.find(l => l.id === (bot.level || config.level)) || LEVELS[0];
