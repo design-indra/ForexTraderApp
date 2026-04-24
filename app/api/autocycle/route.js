@@ -74,7 +74,8 @@ async function runAutoCycle() {
       }
     }
 
-    const candles = await getOHLCV(instrument, granularity, 100, {});
+    // FIX v3: fetch 200 candles agar EMA50/100/200 dan ADX akurat (sebelumnya 100)
+    const candles = await getOHLCV(instrument, granularity, 200, {});
     if (!candles || candles.length < 30) return;
 
     const close = candles[candles.length - 1].close;
