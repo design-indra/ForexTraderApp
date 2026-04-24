@@ -622,7 +622,13 @@ export default function Dashboard({ userEmail = '', onLogout }) {
               const trades     = demo.closedTrades || [];
               const totalCount = trades.length;
               const winCount   = trades.filter(t => (t.pnlUSD || 0) > 0).length;
+              const lossCount  = trades.filter(t => (t.pnlUSD || 0) <= 0).length;
               const winRatePct = totalCount > 0 ? (winCount / totalCount) * 100 : null;
+              const avgWin     = winCount  > 0 ? trades.filter(t=>(t.pnlUSD||0)>0).reduce((s,t)=>s+(t.pnlUSD||0),0) / winCount  : 0;
+              const avgLoss    = lossCount > 0 ? trades.filter(t=>(t.pnlUSD||0)<=0).reduce((s,t)=>s+(t.pnlUSD||0),0) / lossCount : 0;
+              const expectancy = totalCount > 0
+                ? ((winRatePct/100) * avgWin) + ((1 - winRatePct/100) * avgLoss)
+                : 0;
               let wStreak = 0, lStreak = 0;
               for (const t of trades) {
                 if ((t.pnlUSD || 0) > 0) { if (lStreak === 0) wStreak++; else break; }
@@ -631,20 +637,67 @@ export default function Dashboard({ userEmail = '', onLogout }) {
               const streakVal   = wStreak > 0 ? `W${wStreak}` : lStreak > 0 ? `L${lStreak}` : '-';
               const streakColor = wStreak > 0 ? '#10b981' : lStreak > 0 ? '#ef4444' : '#94a3b8';
               return (
-                <div className="grid grid-cols-3 gap-2">
-                  <StatCard label="Trades" value={totalCount} icon="🔢"/>
-                  <StatCard
-                    label="Win Rate"
-                    value={winRatePct !== null ? `${winRatePct.toFixed(0)}%` : '-'}
-                    color={winRatePct !== null && winRatePct >= 50 ? '#10b981' : '#ef4444'}
-                    icon="🎯"
-                  />
-                  <StatCard
-                    label="Streak"
-                    value={streakVal}
-                    color={streakColor}
-                    icon="🔥"
-                  />
+                <div className="flex flex-col gap-2">
+                  {/* Row 1: Trades | Win Rate | Streak */}
+                  <div className="grid grid-cols-3 gap-2">
+                    <StatCard label="Trades" value={totalCount} icon="🔢"/>
+                    <StatCard
+                      label="Win Rate"
+                      value={winRatePct !== null ? `${winRatePct.toFixed(0)}%` : '-'}
+                      color={winRatePct !== null && winRatePct >= 50 ? '#10b981' : '#ef4444'}
+                      icon="🎯"
+                    />
+                    <StatCard
+                      label="Streak"
+                      value={streakVal}
+                      color={streakColor}
+                      icon="🔥"
+                    />
+                  </div>
+                  {/* Row 2: Win count | Loss count | Expectancy */}
+                  <div className="grid grid-cols-3 gap-2">
+                    <StatCard
+                      label="✅ Win"
+                      value={winCount}
+                      sub={avgWin > 0 ? `avg +$${avgWin.toFixed(2)}` : '-'}
+                      color="#10b981"
+                      icon="✅"
+                    />
+                    <StatCard
+                      label="❌ Loss"
+                      value={lossCount}
+                      sub={avgLoss < 0 ? `avg -$${Math.abs(avgLoss).toFixed(2)}` : '-'}
+                      color="#ef4444"
+                      icon="❌"
+                    />
+                    <StatCard
+                      label="Ekspektansi"
+                      value={totalCount > 0 ? `${expectancy >= 0 ? '+' : ''}$${expectancy.toFixed(2)}` : '-'}
+                      sub="per trade"
+                      color={expectancy >= 0 ? '#10b981' : '#ef4444'}
+                      icon="📐"
+                    />
+                  </div>
+                  {/* Row 3: Win/Loss visual bar */}
+                  {totalCount > 0 && (
+                    <div className="rounded-xl border border-slate-700 px-3 py-2" style={{ background:'var(--surface-2)' }}>
+                      <div className="flex justify-between text-xs text-slate-400 mb-1">
+                        <span className="text-emerald-400 font-semibold">✅ {winCount} Win</span>
+                        <span className="text-slate-400 text-xs">{totalCount} total</span>
+                        <span className="text-red-400 font-semibold">{lossCount} Loss ❌</span>
+                      </div>
+                      <div className="flex h-2 rounded-full overflow-hidden gap-0.5">
+                        <div
+                          className="rounded-l-full transition-all duration-500"
+                          style={{ width:`${(winCount/totalCount)*100}%`, background:'linear-gradient(90deg,#10b981,#059669)' }}
+                        />
+                        <div
+                          className="rounded-r-full transition-all duration-500"
+                          style={{ width:`${(lossCount/totalCount)*100}%`, background:'linear-gradient(90deg,#ef4444,#dc2626)' }}
+                        />
+                      </div>
+                    </div>
+                  )}
                 </div>
               );
             })()}
