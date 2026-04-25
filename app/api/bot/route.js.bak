@@ -11,8 +11,7 @@ import {
   getDemoState, resetDemo, demoOpen, demoClose,
   updatePositions, setStartBalance, saveState as saveDemoState,
 } from '../../../lib/demoStore.js';
-import { getCandles as brokerGetCandles, openTrade as brokerOpenTrade, closeTrade as brokerCloseTrade } from '../../../lib/brokerClient.js';
-import { getOHLCV } from '../../../lib/monex.js'; // demo candles fallback
+import { getOHLCV, openTrade, closeTrade, getTicker } from '../../../lib/monex.js';
 import { getRiskSettings } from '../../../lib/riskManager.js';
 import { scanAllPairs } from '../../../lib/pairScanner.js';
 
@@ -65,11 +64,7 @@ export async function GET() {
 
 export async function POST(req) {
   const body = await req.json().catch(() => ({}));
-  const { action, config, clientState, brokerCredentials, brokerConfig: bc } = body;
-  // Support kedua format: brokerConfig baru { brokerId, credentials } atau lama { apiKey, ... }
-  const brokerConfig = bc || (brokerCredentials?.brokerId
-    ? brokerCredentials
-    : { brokerId: brokerCredentials?.apiKey ? 'oanda' : 'demo', credentials: brokerCredentials || {} });
+  const { action, config, clientState, brokerCredentials } = body;
 
   // ── Restore client state ─────────────────────────────────────────────────────
   // FIXED: Restore clientState tanpa syarat usdBalance — openPositions wajib di-restore
@@ -134,32 +129,24 @@ export async function POST(req) {
         const tradeId = config?.tradeId;
         if (tradeId) {
           demo.closedTrades = demo.closedTrades.filter(t => t.id !== tradeId);
-          demo.totalPnl     = parseFloat(demo.closedTrades.reduce((s,t)=>s+(t.pnlUSD||0),0).toFixed(2));
+          demo.totalPnl     = demo.closedTrades.reduce((s, t) => s + (t.pnlUSD || 0), 0);
           demo.tradeCount   = demo.closedTrades.length;
-          demo.totalPnlPct  = demo.startBalance > 0 ? parseFloat(((demo.totalPnl/demo.startBalance)*100).toFixed(2)) : 0;
-          demo.usdBalance   = parseFloat((demo.startBalance + demo.totalPnl).toFixed(2));
-          saveDemoState();
+          demo.totalPnlPct  = demo.startBalance > 0 ? (demo.totalPnl / demo.startBalance) * 100 : 0;
         }
         return NextResponse.json({ success: true, demo: getDemoState() });
       }
 
       case 'clearHistory': {
         const demo = getDemoState();
-        demo.closedTrades      = [];
-        demo.totalPnl          = 0;
-        demo.totalPnlPct       = 0;
-        demo.tradeCount        = 0;
-        demo.consecutiveWins   = 0;
-        demo.consecutiveLosses = 0;
-        demo.usdBalance        = demo.startBalance;
-        saveDemoState();
+        demo.closedTrades = []; demo.totalPnl = 0;
+        demo.totalPnlPct  = 0;  demo.tradeCount = 0;
         return NextResponse.json({ success: true, demo: getDemoState() });
       }
 
       // ── Scan — paksa scan ulang semua pair ──────────────────────────────────
       case 'scan': {
         const tf    = config?.tf || '5m';
-        // brokerConfig handles credentials now
+        const creds = brokerCredentials || {};
         const scan  = await scanAllPairs(tf, creds);
         lastScanResult = scan;
         lastScanTime   = Date.now();
@@ -173,7 +160,7 @@ export async function POST(req) {
 
         const tf          = config?.tf   || '5m';
         const autoPair    = config?.autoPair ?? state.autoPair ?? false;
-        // brokerConfig handles credentials
+        const creds       = (state.mode !== 'demo') ? brokerCredentials : null;
         const demo        = getDemoState();
         const openPos     = demo.openPositions || [];
         const hasOpenPos  = openPos.length > 0;
@@ -223,13 +210,7 @@ export async function POST(req) {
 
         // Selalu fetch candles segar — candles dari scanner bisa 30 detik stale
         // BUG 7 FIX: hapus kondisi if (!candles) yang selalu true karena candles = null
-        // FIX v3: fetch 200 candles agar EMA50/100/200 dan ADX akurat
-        // Coba broker API dulu, fallback ke demo candles
-        let candles = null;
-        if (brokerConfig.brokerId !== 'demo') {
-          try { candles = await brokerGetCandles(instrument, config?.tf || '5m', 200, brokerConfig); } catch {}
-        }
-        if (!candles || !candles.length) candles = await getOHLCV(instrument, granularity, 200, {});
+        const candles = await getOHLCV(instrument, granularity, 100, creds || {});
 
         if (!candles || candles.length < 30) {
           return NextResponse.json({ success: false, error: 'Insufficient candle data' });
@@ -318,7 +299,7 @@ export async function POST(req) {
             if (result.success) recordTradeResult(result.trade.pnlUSD, result.trade.pnlPips, exitDec.position.instrument);
           } else {
             try {
-              await brokerCloseTrade(exitDec.position.monexTradeId || exitDec.position.id, brokerConfig);
+              await closeTrade(exitDec.position.monexTradeId || exitDec.position.id, creds || {});
               recordTradeResult(exitDec.pnlUSD || 0, exitDec.pnlPips || 0, instrument);
             } catch (err) {
               console.error('Close trade error:', err.message);
@@ -344,7 +325,7 @@ export async function POST(req) {
           } else {
             try {
               const units = e.direction === 'buy' ? e.lots * 100000 : -(e.lots * 100000);
-              await brokerOpenTrade(instrument, units, e.stopLoss, e.takeProfit, brokerConfig);
+              await openTrade(instrument, units, e.stopLoss, e.takeProfit, creds || {});
             } catch (err) {
               console.error('Open trade error:', err.message);
             }
