@@ -80,8 +80,8 @@ export default function TradeLog({ trades = [], onDelete, onClearAll }) {
                 <div className={`text-sm font-bold mono ${isProfit ? 'text-emerald-400' : 'text-red-400'}`}>
                   {fmtIDR(t.pnlUSD)}
                 </div>
-                <div className={`text-xs text-slate-600 mono`}>
-                  {(t.pnlUSD >= 0 ? '+' : '')}${Math.abs(t.pnlUSD || 0).toFixed(2)}
+                <div className={`text-xs text-slate-500 mono`}>
+                  ≈ {(t.pnlUSD >= 0 ? '+' : '')}${Math.abs(t.pnlUSD || 0).toFixed(2)}
                 </div>
               </div>
               {onDelete && (

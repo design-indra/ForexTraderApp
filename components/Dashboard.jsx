@@ -668,8 +668,9 @@ export default function Dashboard({ userEmail = '', onLogout }) {
               />
               <StatCard
                 label="Total P&L"
-                value={fmtPnlUSD(totalPnl)}
+                value={fmtIDRCompact(totalPnl, idrRate)}
                 sub={fmtPct(pnlPct)}
+                sub={`≈ ${totalPnl >= 0 ? '+' : ''}$${Math.abs(totalPnl).toFixed(2)} (${pnlPct >= 0 ? '+' : ''}${pnlPct.toFixed(2)}%)`}
                 color={totalPnl >= 0 ? '#10b981' : '#ef4444'}
                 icon={totalPnl >= 0 ? '📈' : '📉'}
               />
@@ -717,20 +718,20 @@ export default function Dashboard({ userEmail = '', onLogout }) {
                     <StatCard
                       label="✅ Win"
                       value={winCount}
-                      sub={avgWin > 0 ? `avg +$${avgWin.toFixed(2)}` : '-'}
+                      sub={avgWin > 0 ? `avg +${fmtIDRCompact(avgWin, idrRate)}` : '-'}
                       color="#10b981"
                       icon="✅"
                     />
                     <StatCard
                       label="❌ Loss"
                       value={lossCount}
-                      sub={avgLoss < 0 ? `avg -$${Math.abs(avgLoss).toFixed(2)}` : '-'}
+                      sub={avgLoss < 0 ? `avg -${fmtIDRCompact(Math.abs(avgLoss), idrRate)}` : '-'}
                       color="#ef4444"
                       icon="❌"
                     />
                     <StatCard
                       label="Ekspektansi"
-                      value={totalCount > 0 ? `${expectancy >= 0 ? '+' : ''}$${expectancy.toFixed(2)}` : '-'}
+                      value={totalCount > 0 ? `${expectancy >= 0 ? '+' : '-'}${fmtIDRCompact(Math.abs(expectancy), idrRate)}` : '-'}
                       sub="per trade"
                       color={expectancy >= 0 ? '#10b981' : '#ef4444'}
                       icon="📐"
@@ -765,7 +766,7 @@ export default function Dashboard({ userEmail = '', onLogout }) {
               <div className="rounded-2xl border border-slate-700 p-3" style={{ background:'var(--surface-2)' }}>
                 <div className="flex justify-between text-xs mb-2">
                   <span className="text-slate-500">Target Profit</span>
-                  <span className="text-slate-300">{fmtPnlUSD(totalPnl)} / ${target.toFixed(0)}</span>
+                  <span className="text-slate-300">{fmtIDRCompact(totalPnl, idrRate)} / {fmtIDRCompact(target, idrRate)}</span>
                 </div>
                 <div className="h-2 bg-slate-700 rounded-full overflow-hidden">
                   <div className="h-full rounded-full transition-all duration-500" style={{ width:`${progress}%`, background:'linear-gradient(90deg,#10b981,#059669)' }}/>
