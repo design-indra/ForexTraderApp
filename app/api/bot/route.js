@@ -159,8 +159,8 @@ export async function POST(req) {
       // ── Scan — paksa scan ulang semua pair ──────────────────────────────────
       case 'scan': {
         const tf    = config?.tf || '5m';
-        // brokerConfig handles credentials now
-        const scan  = await scanAllPairs(tf, creds);
+        // pairScanner pakai demo candles (getOHLCV) — tidak butuh broker credentials
+        const scan  = await scanAllPairs(tf, {});
         lastScanResult = scan;
         lastScanTime   = Date.now();
         return NextResponse.json({ success: true, scan });
@@ -196,7 +196,7 @@ export async function POST(req) {
           // === CASE 2: Tidak ada posisi — scan pair terbaik untuk entry baru ===
           const needScan = (Date.now() - lastScanTime) > SCAN_INTERVAL_MS;
           if (needScan || !lastScanResult) {
-            scanData       = await scanAllPairs(tf, creds || {});
+            scanData       = await scanAllPairs(tf, {});
             lastScanResult = scanData;
             lastScanTime   = Date.now();
           } else {
