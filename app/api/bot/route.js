@@ -84,8 +84,12 @@ export async function POST(req) {
     if (clientState.tradeCount  !== undefined) demo.tradeCount        = clientState.tradeCount;
     if (clientState.consecutiveLosses !== undefined) demo.consecutiveLosses = clientState.consecutiveLosses;
     if (clientState.consecutiveWins   !== undefined) demo.consecutiveWins   = clientState.consecutiveWins;
-    // ALWAYS restore openPositions — ini kritis untuk Vercel stateless
-    if (Array.isArray(clientState.openPositions)) demo.openPositions = clientState.openPositions;
+    // Restore openPositions dari client HANYA jika server tidak punya posisi
+    // Railway pakai /tmp/demoState.json — server sudah persistent, client tidak perlu override
+    if (Array.isArray(clientState.openPositions) && clientState.openPositions.length > 0
+        && demo.openPositions.length === 0) {
+      demo.openPositions = clientState.openPositions;
+    }
     // Merge closedTrades (hindari duplikat)
     if (Array.isArray(clientState.closedTrades)) {
       const existing = new Set(demo.closedTrades.map(t => t.id));

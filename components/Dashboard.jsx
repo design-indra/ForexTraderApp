@@ -345,18 +345,35 @@ export default function Dashboard({ userEmail = '', onLogout }) {
             }),
           });
           const d = await res.json();
-          if (d.success && !d.skipped) {
-            // Langsung update state dari response cycle — jangan tunggu fetchBot
-            if (d.demo) saveDemoState(d.demo);
+          if (d.success) {
             if (d.scanResult) setScanResult(d.scanResult);
-            setBotData(prev => {
-              if (!prev) return prev;
-              return {
-                ...prev,
-                demo: d.demo || prev.demo,
-                bot : d.bot ? { ...prev.bot, ...d.bot } : prev.bot,
-              };
+
+            // Selalu fetch sync setelah cycle untuk dapat openPositions fresh dari server
+            // Ini mencegah race condition antara autocycle server dan cycle client
+            const syncRes = await fetch('/api/bot', {
+              method: 'POST', headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ action: 'sync', clientState: null }),
             });
+            const syncData = await syncRes.json();
+            if (syncData.success) {
+              if (syncData.demo) saveDemoState(syncData.demo);
+              if (syncData.scanResult) setScanResult(syncData.scanResult);
+              setBotData(prev => {
+                if (!prev) return prev;
+                return {
+                  ...prev,
+                  demo: syncData.demo || d.demo || prev.demo,
+                  bot : syncData.bot ? { ...prev.bot, ...syncData.bot } : (d.bot ? { ...prev.bot, ...d.bot } : prev.bot),
+                  logs: syncData.logs || prev.logs,
+                };
+              });
+            } else if (!d.skipped) {
+              if (d.demo) saveDemoState(d.demo);
+              setBotData(prev => {
+                if (!prev) return prev;
+                return { ...prev, demo: d.demo || prev.demo, bot: d.bot ? { ...prev.bot, ...d.bot } : prev.bot };
+              });
+            }
           }
         } catch {}
       }, 5000);
