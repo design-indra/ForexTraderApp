@@ -311,11 +311,11 @@ export default function Dashboard({ userEmail = '', onLogout }) {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           action: 'update-config',
-          config: { tf: config.tf, autoPair: config.autoPair, instrument: config.instrument },
+          config: { tf: config.tf, autoPair: config.autoPair, instrument: config.instrument, signalMode: config.signalMode || 'combined' },
         }),
       }).catch(() => {});
     }
-  }, [config.tf, config.autoPair, config.instrument, botData?.bot?.running]);
+  }, [config.tf, config.autoPair, config.instrument, config.signalMode, botData?.bot?.running]);
 
   // Wake lock
   useEffect(() => {
@@ -335,7 +335,7 @@ export default function Dashboard({ userEmail = '', onLogout }) {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               action: 'cycle',
-              config: { instrument: config.instrument, tf: config.tf, autoPair: config.autoPair },
+              config: { instrument: config.instrument, tf: config.tf, autoPair: config.autoPair, signalMode: config.signalMode || 'combined' },
               clientState: storedDemo,
               brokerConfig: storedBrokerConfig,
             }),
@@ -367,7 +367,7 @@ export default function Dashboard({ userEmail = '', onLogout }) {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           action: 'start',
-          config: { tf: config.tf, autoPair: config.autoPair, instrument: config.instrument },
+          config: { tf: config.tf, autoPair: config.autoPair, instrument: config.instrument, signalMode: config.signalMode || 'combined' },
         }),
       });
     } catch {}

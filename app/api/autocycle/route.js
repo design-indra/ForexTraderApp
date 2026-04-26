@@ -24,7 +24,7 @@ import { recordTradeResult } from '../../../lib/tradingEngine.js';
 // ── State autocycle (in-memory per server instance) ───────────────────────────
 let autoCycleTimer   = null;
 let autoCycleRunning = false;
-let autoCycleConfig  = { tf: '5m', autoPair: false, instrument: 'EUR_USD' };
+let autoCycleConfig  = { tf: '5m', autoPair: false, instrument: 'EUR_USD', signalMode: 'combined' };
 let lastCycleTime    = null;
 let lastCycleError   = null;
 let cycleCount       = 0;
@@ -46,7 +46,10 @@ async function runAutoCycle() {
   const openPos    = demo.openPositions || [];
   const hasOpenPos = openPos.length > 0;
   const tf         = autoCycleConfig.tf || '5m';
-  const autoPair   = autoCycleConfig.autoPair || false;
+  const signalMode = autoCycleConfig.signalMode || 'combined';
+  const autoPair   = (signalMode === 'scanner' || signalMode === 'combined')
+    ? (autoCycleConfig.autoPair || false)
+    : false;
   const granularity = TF_MAP[tf] || 'M5';
   const riskCfg    = getRiskSettings();
 
@@ -92,7 +95,7 @@ async function runAutoCycle() {
     const ticker = await getTicker(instrument, {}).catch(() => null);
     const openForInstrument = openPos.filter(p => p.instrument === instrument);
 
-    const scanSignalForCycle = (autoPair && !hasOpenPos && scanData?.best?.instrument === instrument)
+    const scanSignalForCycle = (signalMode !== 'level' && autoPair && !hasOpenPos && scanData?.best?.instrument === instrument)
       ? { action: scanData.best.action, score: scanData.best.score, delta: scanData.best.delta }
       : null;
 
