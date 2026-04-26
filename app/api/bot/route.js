@@ -159,8 +159,8 @@ export async function POST(req) {
       // ── Scan — paksa scan ulang semua pair ──────────────────────────────────
       case 'scan': {
         const tf    = config?.tf || '5m';
-        // pairScanner pakai demo candles (getOHLCV) — tidak butuh broker credentials
-        const scan  = await scanAllPairs(tf, {});
+        // brokerConfig handles credentials now
+        const scan  = await scanAllPairs(tf, {});  // demo candles, no credentials needed
         lastScanResult = scan;
         lastScanTime   = Date.now();
         return NextResponse.json({ success: true, scan });
