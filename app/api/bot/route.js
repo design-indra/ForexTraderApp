@@ -172,7 +172,11 @@ export async function POST(req) {
         if (!state.running) return NextResponse.json({ success: false, error: 'Bot not running' });
 
         const tf          = config?.tf   || '5m';
-        const autoPair    = config?.autoPair ?? state.autoPair ?? false;
+        const signalMode  = config?.signalMode ?? state.signalMode ?? 'combined';
+        // autoPair aktif jika mode scanner atau combined (scanner dibutuhkan untuk scanning pair)
+        const autoPair    = (signalMode === 'scanner' || signalMode === 'combined')
+          ? (config?.autoPair ?? state.autoPair ?? false)
+          : false; // mode 'level' → tidak perlu scanner
         // brokerConfig handles credentials
         const demo        = getDemoState();
         const openPos     = demo.openPositions || [];
@@ -252,10 +256,9 @@ export async function POST(req) {
         // Fetch ticker untuk spread filter — non-blocking, jika gagal spread filter pakai estimasi candle
         const ticker = await getTicker(instrument, creds || {}).catch(() => null);
 
-        // FIX: scanSignal hanya relevan saat autoPair ON dan instrument cocok.
-        // Saat hasOpenPos, tidak perlu scanSignal untuk proses exit — cukup null
-        // agar runCycle fokus ke exit check tanpa interference scanner arah entry.
-        const scanSignalForCycle = (autoPair && !hasOpenPos && scanData?.best?.instrument === instrument)
+        // scanSignal hanya relevan untuk mode 'scanner' atau 'combined', dan saat tidak ada open pos
+        // Mode 'level' → scanSignal = null (level engine bekerja mandiri)
+        const scanSignalForCycle = (signalMode !== 'level' && autoPair && !hasOpenPos && scanData?.best?.instrument === instrument)
           ? { action: scanData.best.action, score: scanData.best.score, delta: scanData.best.delta }
           : null;
 

@@ -218,8 +218,8 @@ export default function Dashboard({ userEmail = '', onLogout }) {
   const activeBroker = BROKER_LIST.find(b => b.id === brokerConfig.brokerId) || BROKER_LIST[0];
 
   const [config, setConfig] = useState(() => {
-    try { const s = localStorage.getItem('ft_config'); return s ? JSON.parse(s) : { mode:'demo', level:1, instrument:'EUR_USD', tf:'5m', direction:'both', autoPair:false }; }
-    catch { return { mode:'demo', level:1, instrument:'EUR_USD', tf:'5m', direction:'both', autoPair:false }; }
+    try { const s = localStorage.getItem('ft_config'); const parsed = s ? JSON.parse(s) : null; return parsed ? { signalMode:'combined', ...parsed } : { mode:'demo', level:1, instrument:'EUR_USD', tf:'5m', direction:'both', autoPair:false, signalMode:'combined' }; }
+    catch { return { mode:'demo', level:1, instrument:'EUR_USD', tf:'5m', direction:'both', autoPair:false, signalMode:'combined' }; }
   });
   const [localDemo, setLocalDemo] = useState(() => {
     try { const s = localStorage.getItem('ft_demo'); return s ? JSON.parse(s) : null; } catch { return null; }
@@ -775,7 +775,39 @@ export default function Dashboard({ userEmail = '', onLogout }) {
               </div>
             )}
 
-            {/* Level selector */}
+            {/* Signal Mode selector */}
+            <div className="rounded-2xl border border-slate-700 p-3" style={{ background:'var(--surface-2)' }}>
+              <div className="text-xs text-slate-500 mb-2 font-semibold">Signal Mode</div>
+              <div className="grid grid-cols-3 gap-1.5">
+                {[
+                  { id:'scanner',  icon:'🔍', label:'Scanner Only',  desc:'Sinyal murni dari pair scanner', color:'#0ea5e9' },
+                  { id:'level',    icon:'📊', label:'Level Only',    desc:'Sinyal murni dari strategy level', color:'#8b5cf6' },
+                  { id:'combined', icon:'🤝', label:'Combined',      desc:'Scanner + Level harus setuju', color:'#10b981' },
+                ].map(m => {
+                  const isActive = (config.signalMode || 'combined') === m.id;
+                  return (
+                    <button key={m.id}
+                      onClick={() => { setConfig(c => ({ ...c, signalMode: m.id })); if (!isRunning) handleAction('sync'); }}
+                      disabled={isRunning}
+                      title={m.desc}
+                      className={`flex flex-col items-center p-2 rounded-xl border transition-all text-xs ${isActive ? 'border-opacity-100' : 'border-slate-700 opacity-60'}`}
+                      style={{ background: isActive ? `${m.color}22` : 'transparent', borderColor: isActive ? m.color : undefined }}>
+                      <span className="text-base mb-0.5">{m.icon}</span>
+                      <span className="text-center leading-tight font-semibold" style={{ fontSize:9, color: isActive ? m.color : '#94a3b8' }}>{m.label}</span>
+                    </button>
+                  );
+                })}
+              </div>
+              {/* Hint sesuai mode aktif */}
+              <div className="mt-2 text-center" style={{ fontSize:10 }}>
+                {(config.signalMode || 'combined') === 'scanner' && <span className="text-sky-400">🔍 Hanya pair scanner yang menentukan sinyal</span>}
+                {(config.signalMode || 'combined') === 'level'   && <span className="text-violet-400">📊 Hanya strategy level yang menentukan sinyal</span>}
+                {(config.signalMode || 'combined') === 'combined' && <span className="text-emerald-400">🤝 Scanner + Level harus sinkron sebelum entry</span>}
+              </div>
+            </div>
+
+            {/* Level selector — tampil hanya jika mode level atau combined */}
+            {(config.signalMode || 'combined') !== 'scanner' && (
             <div className="rounded-2xl border border-slate-700 p-3" style={{ background:'var(--surface-2)' }}>
               <div className="text-xs text-slate-500 mb-2 font-semibold">Strategy Level</div>
               <div className="grid grid-cols-5 gap-1.5">
@@ -791,6 +823,7 @@ export default function Dashboard({ userEmail = '', onLogout }) {
                 ))}
               </div>
             </div>
+            )}
 
             {/* Direction + Timeframe */}
             <div className="grid grid-cols-2 gap-2">
@@ -916,12 +949,17 @@ export default function Dashboard({ userEmail = '', onLogout }) {
                   )}
                   <div className="text-slate-500 text-sm mt-1">Score: {signal.score?.toFixed(0) || 50}/100</div>
                   <div className="text-xs text-slate-600 mt-1 flex items-center gap-1.5 justify-center flex-wrap">
-                    {signal.fromScanner
-                      ? <span>🔍 Scanner Signal</span>
-                      : <span>Level {signal.level || config.level} · {currentLevel.label}</span>
-                    }
+                    {(() => {
+                      const mode = config.signalMode || 'combined';
+                      if (mode === 'scanner') return <span className="text-sky-400">🔍 Scanner Only</span>;
+                      if (mode === 'level')   return <span className="text-violet-400">📊 Level {signal.level || config.level} · {currentLevel.label}</span>;
+                      // combined
+                      if (signal.fromScanner) return <span>🔍 Scanner Signal</span>;
+                      return <span>Level {signal.level || config.level} · {currentLevel.label}</span>;
+                    })()}
                     {signal.scannerAgreement   && <span className="text-emerald-400">✅ Konfirmasi</span>}
                     {signal.boostedByScan && !signal.scannerAgreement && <span className="text-amber-400">⚡ Boosted</span>}
+                    {signal.scannerOnly        && <span className="text-sky-400">🔍 Pure Scanner</span>}
                     {signal.levelHoldOverride  && <span className="text-sky-400">🔍 Scanner Override</span>}
                     {signal.levelConflict      && <span className="text-orange-500">⚠️ Konflik Arah</span>}
                     {signal.sessionBlocked     && <span className="text-orange-400">🕐 Sesi Sepi</span>}
@@ -1004,7 +1042,13 @@ export default function Dashboard({ userEmail = '', onLogout }) {
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
-                  <Toggle value={!!config.autoPair} onChange={v => setConfig(c => ({ ...c, autoPair: v }))}/>
+                  {/* Toggle Auto Scan hanya relevan di mode scanner atau combined */}
+                  {(config.signalMode || 'combined') !== 'level' && (
+                    <Toggle value={!!config.autoPair} onChange={v => setConfig(c => ({ ...c, autoPair: v }))}/>
+                  )}
+                  {(config.signalMode || 'combined') === 'level' && (
+                    <span className="text-xs text-slate-600 italic">Off (Level Only)</span>
+                  )}
                   <button
                     onClick={async () => {
                       setScanLoading(true);
