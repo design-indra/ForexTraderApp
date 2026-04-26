@@ -246,8 +246,12 @@ export default function Dashboard({ userEmail = '', onLogout }) {
 
   const saveDemoState = useCallback((demo) => {
     if (!demo) return;
-    try { localStorage.setItem('ft_demo', JSON.stringify(demo)); } catch {}
-    setLocalDemo(demo);
+    // FIX: jangan simpan openPositions ke localStorage
+    // openPositions adalah state server (Railway /tmp/demoState.json)
+    // Menyimpannya ke local akan menyebabkan posisi stale menimpa posisi server saat merge
+    const toSave = { ...demo, openPositions: [] };
+    try { localStorage.setItem('ft_demo', JSON.stringify(toSave)); } catch {}
+    setLocalDemo(demo); // state React tetap lengkap (dengan openPositions)
   }, []);
 
   const fetchBot = useCallback(async () => {
@@ -484,14 +488,20 @@ export default function Dashboard({ userEmail = '', onLogout }) {
     if (localTrades  && localTrades.length  > 0) return localTrades;
     return [];
   };
-  const demo = localDemo
-    ? {
-        ...serverDemo,
-        ...localDemo,
-        openPositions: mergePositions(serverDemo.openPositions, localDemo.openPositions),
-        closedTrades : mergeTrades(serverDemo.closedTrades,  localDemo.closedTrades),
-      }
-    : serverDemo;
+  // FIX: server SELALU jadi sumber kebenaran untuk openPositions
+  // localDemo hanya fallback untuk field non-kritis (balance, dll) jika server kosong
+  // JANGAN spread localDemo penuh — bisa overwrite openPositions dari server
+  const demo = {
+    ...serverDemo,
+    // Gunakan serverDemo.openPositions jika ada (Railway simpan di file /tmp)
+    // Fallback ke localDemo hanya jika server benar-benar kosong
+    openPositions: mergePositions(serverDemo.openPositions, localDemo?.openPositions),
+    closedTrades : mergeTrades(serverDemo.closedTrades, localDemo?.closedTrades),
+    // Field balance: prefer server, fallback local jika server = 0 atau undefined
+    usdBalance   : serverDemo.usdBalance  ?? localDemo?.usdBalance  ?? 31.25,
+    startBalance : serverDemo.startBalance ?? localDemo?.startBalance ?? 31.25,
+    totalPnl     : serverDemo.totalPnl    ?? localDemo?.totalPnl    ?? 0,
+  };
   const logs       = botData?.logs || [];
   const ticker     = marketData?.ticker     || {};
   const indicators = marketData?.indicators || {};
