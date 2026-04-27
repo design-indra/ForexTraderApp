@@ -1313,7 +1313,8 @@ export default function Dashboard({ userEmail = '', onLogout, userRole = 'user' 
                       Contoh: Win 3×, faktor 1.25× → lot ×{(Math.pow(riskSettings.winMultiplierFactor || 1.25, 2)).toFixed(2)} (capped {riskSettings.winMultiplierMaxFactor || 2}×)
                     </p>
                   </div>
-                )}
+                    );
+        })()}
               </div>
 
               {/* Compound Mode */}
