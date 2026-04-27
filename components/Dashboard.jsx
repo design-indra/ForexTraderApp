@@ -1,5 +1,6 @@
 'use client';
 import { useState, useEffect, useCallback, useRef } from 'react';
+import AdminPanel from './AdminPanel';
 import {
   TrendingUp, TrendingDown, Activity, Zap, Shield, Play, Square,
   RefreshCw, Settings, AlertTriangle, BarChart2, Target, LogOut, ChevronDown,
@@ -30,6 +31,7 @@ const TABS = [
   { id:'risk',     label:'Risk',   icon:'🛡️' },
   { id:'settings', label:'Setup',  icon:'⚙️' },
 ];
+const ADMIN_TAB = { id:'admin', label:'Admin', icon:'👑' };
 
 // IDR exchange rate default
 const DEFAULT_IDR_RATE = 16000;
@@ -165,8 +167,12 @@ function Toggle({ value, onChange }) {
 }
 
 // ─── Main Dashboard ─────────────────────────────────────────────────────────────
-export default function Dashboard({ userEmail = '', onLogout }) {
+export default function Dashboard({ userEmail = '', onLogout, userRole = 'user' }) {
   const [tab,           setTab]           = useState('home');
+  const isAdmin    = userRole === 'admin';
+  const activeTabs = isAdmin ? [...TABS, ADMIN_TAB] : TABS;
+  const subDays    = typeof window !== 'undefined' ? parseInt(localStorage.getItem('ft_sub_days') || '0') : 0;
+  const subEnd     = typeof window !== 'undefined' ? (localStorage.getItem('ft_sub_end') || '') : '';
   const [botData,       setBotData]       = useState(null);
   const [marketData,    setMarketData]    = useState(null);
   const [liveBalance,   setLiveBalance]   = useState(null);
@@ -1485,6 +1491,13 @@ export default function Dashboard({ userEmail = '', onLogout }) {
                 <div className="flex justify-between"><span>Engine</span><span className="text-slate-300">Next.js 15</span></div>
                 <div className="flex justify-between"><span>Indikator</span><span className="text-slate-300">RSI, EMA, MACD, BB, S/R, Fib, VWAP</span></div>
                 <div className="flex justify-between"><span>User</span><span className="text-slate-300">{userEmail}</span></div>
+                <div className="flex justify-between"><span>Role</span><span style={{ color: isAdmin ? '#f59e0b' : '#10b981' }}>{isAdmin ? '👑 Admin' : '👤 User'}</span></div>
+                {!isAdmin && subEnd && (
+                  <div className="flex justify-between"><span>Subscription</span><span className="text-slate-300">s/d {new Date(subEnd).toLocaleDateString('id-ID')}</span></div>
+                )}
+                {!isAdmin && (
+                  <div className="flex justify-between"><span>Sisa</span><span className={subDays <= 7 ? 'text-amber-400 font-bold' : 'text-slate-300'}>{subDays} hari</span></div>
+                )}
               </div>
             </div>
             {onLogout && (
@@ -1495,11 +1508,18 @@ export default function Dashboard({ userEmail = '', onLogout }) {
           </div>
         )}
 
+        {/* ═══ ADMIN PANEL ═══ */}
+        {tab === 'admin' && isAdmin && (
+          <div className="p-3">
+            <AdminPanel />
+          </div>
+        )}
+
       </div>
 
       {/* ── BOTTOM NAV ── */}
       <nav className="fixed bottom-0 left-0 right-0 border-t border-slate-700 flex z-40" style={{ background:'var(--surface-2)' }}>
-        {TABS.map(t => (
+        {activeTabs.map(t => (
           <button key={t.id} onClick={() => setTab(t.id)}
             className={`flex-1 flex flex-col items-center py-2 gap-0.5 transition-colors ${tab === t.id ? 'text-emerald-400' : 'text-slate-600'}`}>
             <span className="text-lg leading-none">{t.icon}</span>
