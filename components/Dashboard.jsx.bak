@@ -1179,55 +1179,30 @@ export default function Dashboard({ userEmail = '', onLogout, userRole = 'user' 
         )}
 
         {/* ═══ RISK ═══ */}
-        {tab === 'risk' && riskSettings && (() => {
-          const LOT_UNLOCK = riskSettings.lotUnlockBalance || 312;
-          const lotLocked  = totalBal < LOT_UNLOCK;
-          return (
+        {tab === 'risk' && riskSettings && (
           <div className="p-3 space-y-3">
             <div className="rounded-2xl border border-slate-700 p-4" style={{ background:'var(--surface-2)' }}>
               <h3 className="text-sm font-bold text-slate-100 mb-4">Risk Settings</h3>
               <div className="space-y-4">
                 {[
-                  { key:'maxRiskPercent',      label:'Max Risk %/Trade',   min:0.5,  max:5,    step:0.5,  suffix:'%',    locked: false },
-                  { key:'maxLotSize',          label:'Max Lot Size',       min:0.01, max:1.0,  step:0.01, suffix:' lot', locked: lotLocked },
-                  { key:'stopLossPips',        label:'Stop Loss',          min:10,   max:100,  step:5,    suffix:' pips',locked: false },
-                  { key:'takeProfitPips',      label:'Take Profit',        min:20,   max:200,  step:10,   suffix:' pips',locked: false },
-                  { key:'trailingStopPips',    label:'Trailing Stop',      min:5,    max:50,   step:5,    suffix:' pips',locked: false },
-                  { key:'maxConsecutiveLosses',label:'Max Consec. Losses', min:1,    max:10,   step:1,    suffix:'x',    locked: false },
-                  { key:'targetProfitUSD',     label:'Target Profit (USD)',min:50,   max:5000, step:50,   suffix:' USD', locked: false },
-                  { key:'cooldownSeconds',     label:'Cooldown',           min:10,   max:300,  step:10,   suffix:' sec', locked: false },
-                  { key:'breakevenPlusPips',   label:'Breakeven+ Buffer',  min:0,    max:10,   step:1,    suffix:' pips',locked: false },
-                ].map(({ key, label, min, max, step, suffix, locked }) => (
-                  <div key={key} className={locked ? 'opacity-60' : ''}>
+                  { key:'maxRiskPercent',      label:'Max Risk %/Trade',   min:0.5,  max:5,    step:0.5,  suffix:'%' },
+                  { key:'maxLotSize',          label:'Max Lot Size',       min:0.01, max:1.0,  step:0.01, suffix:' lot' },
+                  { key:'stopLossPips',        label:'Stop Loss',          min:10,   max:100,  step:5,    suffix:' pips' },
+                  { key:'takeProfitPips',      label:'Take Profit',        min:20,   max:200,  step:10,   suffix:' pips' },
+                  { key:'trailingStopPips',    label:'Trailing Stop',      min:5,    max:50,   step:5,    suffix:' pips' },
+                  { key:'maxConsecutiveLosses',label:'Max Consec. Losses', min:1,    max:10,   step:1,    suffix:'x' },
+                  { key:'targetProfitUSD',     label:'Target Profit (USD)',min:50,   max:5000, step:50,   suffix:' USD' },
+                  { key:'cooldownSeconds',     label:'Cooldown',           min:10,   max:300,  step:10,   suffix:' sec' },
+                  { key:'breakevenPlusPips',   label:'Breakeven+ Buffer',  min:0,    max:10,   step:1,    suffix:' pips' },
+                ].map(({ key, label, min, max, step, suffix }) => (
+                  <div key={key}>
                     <div className="flex justify-between text-xs mb-1.5">
-                      <div className="flex items-center gap-1.5">
-                        <span className="text-slate-400">{label}</span>
-                        {locked && (
-                          <span className="text-xs bg-amber-900/50 text-amber-400 border border-amber-800/50 px-1.5 py-0.5 rounded-full">
-                            {'\U0001F512'} Unlock ${'{'}LOT_UNLOCK{'}'}
-                          </span>
-                        )}
-                      </div>
-                      <span className={locked ? 'text-slate-500 font-bold' : 'text-slate-200 font-bold'}>
-                        {locked && key === 'maxLotSize' ? '0.01' : riskSettings[key]}{suffix}
-                      </span>
+                      <span className="text-slate-400">{label}</span>
+                      <span className="text-slate-200 font-bold">{riskSettings[key]}{suffix}</span>
                     </div>
-                    <input type="range" min={min} max={max} step={step}
-                      value={locked && key === 'maxLotSize' ? 0.01 : riskSettings[key]}
-                      disabled={locked}
-                      onChange={e => {
-                        if (locked) return;
-                        const v = parseFloat(e.target.value);
-                        setRiskSettings(s => ({ ...s, [key]: v }));
-                        saveRiskSettings({ [key]: v });
-                      }}
-                      className={'w-full ' + (locked ? 'accent-slate-600 cursor-not-allowed' : 'accent-emerald-500')}
-                    />
-                    {locked && key === 'maxLotSize' && (
-                      <p className="text-xs text-amber-500/70 mt-1">
-                        Tambah balance hingga ${'{'}LOT_UNLOCK{'}'} untuk unlock lot size
-                      </p>
-                    )}
+                    <input type="range" min={min} max={max} step={step} value={riskSettings[key]}
+                      onChange={e => { const v = parseFloat(e.target.value); setRiskSettings(s => ({ ...s, [key]: v })); saveRiskSettings({ [key]: v }); }}
+                      className="w-full accent-emerald-500"/>
                   </div>
                 ))}
                 {/* Target Profit dalam IDR (info saja) */}
