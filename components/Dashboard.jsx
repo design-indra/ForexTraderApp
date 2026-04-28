@@ -36,6 +36,17 @@ const ADMIN_TAB = { id:'admin', label:'Admin', icon:'👑' };
 // IDR exchange rate default
 const DEFAULT_IDR_RATE = 16000;
 
+// Helper: ambil JWT token dari localStorage
+function getToken() {
+  try { return localStorage.getItem('ft_token') || ''; }
+  catch { return ''; }
+}
+
+// Helper: headers dengan auth token
+function authHeaders() {
+  return { 'Content-Type': 'application/json', 'Authorization': `Bearer ${getToken()}` };
+}
+
 // Broker definitions (mirror dari lib/brokerClient.js untuk UI)
 const BROKER_LIST = [
   {
@@ -266,7 +277,7 @@ export default function Dashboard({ userEmail = '', onLogout, userRole = 'user' 
       const storedDemo  = (() => { try { const s = localStorage.getItem('ft_demo'); return s ? JSON.parse(s) : null; } catch { return null; } })();
       const res = await fetch('/api/bot', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: authHeaders(),
         body: JSON.stringify({ action: 'sync', clientState: storedDemo }),
       });
       const d = await res.json();
@@ -292,7 +303,7 @@ export default function Dashboard({ userEmail = '', onLogout, userRole = 'user' 
       const creds = (() => { try { const s = localStorage.getItem('ft_monex_creds'); return s ? JSON.parse(s) : null; } catch { return null; } })();
       const d = await fetch('/api/balance', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: authHeaders(),
         body: JSON.stringify({ mode: config.mode, credentials: creds }),
       }).then(r => r.json());
       if (d.success) setLiveBalance(d.balance);
@@ -318,7 +329,7 @@ export default function Dashboard({ userEmail = '', onLogout, userRole = 'user' 
   useEffect(() => {
     if (botData?.bot?.running) {
       fetch('/api/autocycle', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        method: 'POST', headers: authHeaders(),
         body: JSON.stringify({
           action: 'update-config',
           config: { tf: config.tf, autoPair: config.autoPair, instrument: config.instrument, signalMode: config.signalMode || 'combined' },
@@ -342,7 +353,7 @@ export default function Dashboard({ userEmail = '', onLogout, userRole = 'user' 
           const storedDemo  = (() => { try { const s = localStorage.getItem('ft_demo'); return s ? JSON.parse(s) : null; } catch { return null; } })();
           const storedBrokerConfig = (() => { try { const s = localStorage.getItem('ft_broker_config'); return s ? JSON.parse(s) : { brokerId:'demo', credentials:{} }; } catch { return { brokerId:'demo', credentials:{} }; } })();
           const res = await fetch('/api/bot', {
-            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            method: 'POST', headers: authHeaders(),
             body: JSON.stringify({
               action: 'cycle',
               config: { instrument: config.instrument, tf: config.tf, autoPair: config.autoPair, signalMode: config.signalMode || 'combined' },
@@ -357,7 +368,7 @@ export default function Dashboard({ userEmail = '', onLogout, userRole = 'user' 
             // Selalu fetch sync setelah cycle untuk dapat openPositions fresh dari server
             // Ini mencegah race condition antara autocycle server dan cycle client
             const syncRes = await fetch('/api/bot', {
-              method: 'POST', headers: { 'Content-Type': 'application/json' },
+              method: 'POST', headers: authHeaders(),
               body: JSON.stringify({ action: 'sync', clientState: null }),
             });
             const syncData = await syncRes.json();
@@ -391,7 +402,7 @@ export default function Dashboard({ userEmail = '', onLogout, userRole = 'user' 
   const startAutoCycle = async () => {
     try {
       await fetch('/api/autocycle', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        method: 'POST', headers: authHeaders(),
         body: JSON.stringify({
           action: 'start',
           config: { tf: config.tf, autoPair: config.autoPair, instrument: config.instrument, signalMode: config.signalMode || 'combined' },
@@ -403,7 +414,7 @@ export default function Dashboard({ userEmail = '', onLogout, userRole = 'user' 
   const stopAutoCycle = async () => {
     try {
       await fetch('/api/autocycle', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        method: 'POST', headers: authHeaders(),
         body: JSON.stringify({ action: 'stop' }),
       });
     } catch {}
@@ -415,7 +426,7 @@ export default function Dashboard({ userEmail = '', onLogout, userRole = 'user' 
       const storedDemo  = (() => { try { const s = localStorage.getItem('ft_demo'); return s ? JSON.parse(s) : null; } catch { return null; } })();
       const storedBrokerCfg = (() => { try { const s = localStorage.getItem('ft_broker_config'); return s ? JSON.parse(s) : { brokerId:'demo', credentials:{} }; } catch { return { brokerId:'demo', credentials:{} }; } })();
       const d = await fetch('/api/bot', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        method: 'POST', headers: authHeaders(),
         body: JSON.stringify({
           action,
           config: { ...config, ...extra },
@@ -446,14 +457,14 @@ export default function Dashboard({ userEmail = '', onLogout, userRole = 'user' 
 
   const handleDeleteTrade = async (tradeId) => {
     const storedDemo = (() => { try { const s = localStorage.getItem('ft_demo'); return s ? JSON.parse(s) : null; } catch { return null; } })();
-    const d = await fetch('/api/bot', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ action:'deleteTrade', config:{tradeId}, clientState: storedDemo }) }).then(r => r.json());
+    const d = await fetch('/api/bot', { method:'POST', headers: authHeaders(), body: JSON.stringify({ action:'deleteTrade', config:{tradeId}, clientState: storedDemo }) }).then(r => r.json());
     if (d.success && d.demo) { saveDemoState(d.demo); setBotData(prev => prev ? { ...prev, demo: d.demo } : prev); if (d.scanResult) setScanResult(d.scanResult); }
   };
 
   const handleClearHistory = async () => {
     if (!confirm('Hapus semua riwayat trade?')) return;
     const storedDemo = (() => { try { const s = localStorage.getItem('ft_demo'); return s ? JSON.parse(s) : null; } catch { return null; } })();
-    const d = await fetch('/api/bot', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ action:'clearHistory', clientState: storedDemo }) }).then(r => r.json());
+    const d = await fetch('/api/bot', { method:'POST', headers: authHeaders(), body: JSON.stringify({ action:'clearHistory', clientState: storedDemo }) }).then(r => r.json());
     if (d.success && d.demo) {
       // FIX: hapus localDemo lama dulu agar saldo ter-reset dengan benar
       try { localStorage.removeItem('ft_demo'); } catch {}
@@ -474,7 +485,7 @@ export default function Dashboard({ userEmail = '', onLogout, userRole = 'user' 
     try {
       const res = await fetch('/api/broker', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: authHeaders(),
         body: JSON.stringify({ action: 'test', brokerConfig }),
       }).then(r => r.json());
       if (res.success) {
@@ -1089,7 +1100,7 @@ export default function Dashboard({ userEmail = '', onLogout, userRole = 'user' 
                         const storedCreds = (() => { try { const s = localStorage.getItem('ft_monex_creds'); return s ? JSON.parse(s) : null; } catch { return null; } })();
                         const storedDemo  = (() => { try { const s = localStorage.getItem('ft_demo'); return s ? JSON.parse(s) : null; } catch { return null; } })();
                         const d = await fetch('/api/bot', {
-                          method: 'POST', headers: { 'Content-Type': 'application/json' },
+                          method: 'POST', headers: authHeaders(),
                           body: JSON.stringify({ action:'scan', config:{ tf: config.tf }, clientState: storedDemo, brokerConfig }),
                         }).then(r => r.json());
                         if (d.success) setScanResult(d.scan);

@@ -1,107 +1,109 @@
 /**
- * app/api/autocycle/route.js — Server-Side Bot Auto Cycle
+ * app/api/autocycle/route.js — Server-Side Bot Auto Cycle (Per-User)
  *
- * Cara kerja:
- * - Railway menjalankan server terus-menerus (bukan serverless/Vercel)
- * - Saat server start, bot cycle berjalan otomatis di background via setInterval
- * - Tidak bergantung pada browser — bot tetap aktif meski app ditutup
- *
- * Endpoint:
- * GET  /api/autocycle         → cek status autocycle
- * POST /api/autocycle         → start / stop / get-status autocycle
+ * v3.0 — Per-User Multi-Tenant
+ * Setiap user punya cycle timer sendiri — tidak ada global state.
+ * Admin start/stop hanya mempengaruhi bot milik admin itu sendiri.
  */
 
 import { NextResponse } from 'next/server';
-import { getBotState, runCycle } from '../../../lib/tradingEngine.js';
-import {
-  getDemoState, demoOpen, demoClose, updatePositions,
-} from '../../../lib/demoStore.js';
+import { getBotState, runCycle, recordTradeResult } from '../../../lib/tradingEngine.js';
 import { getOHLCV, getTicker } from '../../../lib/monex.js';
 import { getRiskSettings } from '../../../lib/riskManager.js';
 import { scanAllPairs } from '../../../lib/pairScanner.js';
-import { recordTradeResult } from '../../../lib/tradingEngine.js';
+import { verifyToken } from '../../../lib/auth.js';
+import {
+  getUserState, saveUserState,
+  userDemoOpen, userDemoClose, userUpdatePositions,
+} from '../../../lib/userState.js';
 
-// ── State autocycle (in-memory per server instance) ───────────────────────────
-let autoCycleTimer   = null;
-let autoCycleRunning = false;
-let autoCycleConfig  = { tf: '5m', autoPair: false, instrument: 'EUR_USD', signalMode: 'combined' };
-let lastCycleTime    = null;
-let lastCycleError   = null;
-let cycleCount       = 0;
-
-const TF_MAP = {
-  '1m': 'M1', '5m': 'M5', '15m': 'M15', '30m': 'M30',
-  '1h': 'H1', '4h': 'H4', '1d': 'D',
-};
+const userCycles = new Map();
+const TF_MAP = { '1m':'M1','5m':'M5','15m':'M15','30m':'M30','1h':'H1','4h':'H4','1d':'D' };
 const SCAN_INTERVAL_MS = 30_000;
-let lastScanResult = null;
-let lastScanTime   = 0;
 
-// ── Fungsi cycle (sama logika dengan bot/route.js cycle) ─────────────────────
-async function runAutoCycle() {
-  const state = getBotState();
-  if (!state.running) return;
+function getCycleState(userId) {
+  if (!userCycles.has(userId)) {
+    userCycles.set(userId, {
+      timer: null, running: false,
+      config: { tf:'5m', autoPair:false, instrument:'EUR_USD', signalMode:'combined' },
+      lastCycleTime: null, lastError: null, cycleCount: 0,
+      scanResult: null, scanTime: 0,
+    });
+  }
+  return userCycles.get(userId);
+}
 
-  const demo       = getDemoState();
-  const openPos    = demo.openPositions || [];
+function extractUserId(req) {
+  const auth    = req.headers.get('authorization') || '';
+  const token   = auth.replace('Bearer ', '').trim();
+  const decoded = verifyToken(token);
+  return decoded?.id || null;
+}
+
+async function runUserAutoCycle(userId) {
+  const cs  = getCycleState(userId);
+  const bot = getBotState(userId);
+  if (!bot.running) return;
+
+  let userDemo;
+  try { userDemo = await getUserState(userId); }
+  catch { return; }
+
+  const openPos    = userDemo.openPositions || [];
   const hasOpenPos = openPos.length > 0;
-  const tf         = autoCycleConfig.tf || '5m';
-  const signalMode = autoCycleConfig.signalMode || 'combined';
+  const tf         = cs.config.tf || '5m';
+  const signalMode = cs.config.signalMode || 'combined';
   const autoPair   = (signalMode === 'scanner' || signalMode === 'combined')
-    ? (autoCycleConfig.autoPair || false)
-    : false;
+    ? (cs.config.autoPair || false) : false;
   const granularity = TF_MAP[tf] || 'M5';
   const riskCfg    = getRiskSettings();
 
-  let instrument = autoCycleConfig.instrument || state.instrument || 'EUR_USD';
+  let instrument = cs.config.instrument || bot.instrument || 'EUR_USD';
   let scanData   = null;
 
   try {
     if (autoPair && hasOpenPos) {
       instrument = openPos[0].instrument;
-      scanData   = lastScanResult;
-
+      scanData   = cs.scanResult;
     } else if (autoPair && !hasOpenPos) {
-      const needScan = (Date.now() - lastScanTime) > SCAN_INTERVAL_MS;
-      if (needScan || !lastScanResult) {
-        scanData       = await scanAllPairs(tf, {});
-        lastScanResult = scanData;
-        lastScanTime   = Date.now();
+      const needScan = (Date.now() - cs.scanTime) > SCAN_INTERVAL_MS;
+      if (needScan || !cs.scanResult) {
+        scanData      = await scanAllPairs(tf, {});
+        cs.scanResult = scanData;
+        cs.scanTime   = Date.now();
       } else {
-        scanData = lastScanResult;
+        scanData = cs.scanResult;
       }
       if (scanData?.best && scanData.best.action !== 'HOLD') {
         instrument = scanData.best.instrument;
       } else {
-        return; // tidak ada sinyal kuat, skip cycle
+        return;
       }
     }
 
-    // FIX v3: fetch 200 candles agar EMA50/100/200 dan ADX akurat (sebelumnya 100)
     const candles = await getOHLCV(instrument, granularity, 200, {});
     if (!candles || candles.length < 30) return;
 
     const close = candles[candles.length - 1].close;
-    updatePositions(instrument, close);
+    await userUpdatePositions(userId, instrument, close).catch(() => {});
 
-    // Update posisi pair lain
     const otherPairs = [...new Set(openPos.map(p => p.instrument).filter(p => p !== instrument))];
     for (const p of otherPairs) {
-      const pc = await getOHLCV(p, granularity, 5, {})
-        .then(c => c?.slice(-1)[0]?.close).catch(() => null);
-      if (pc) updatePositions(p, pc);
+      const pc = await getOHLCV(p, granularity, 5, {}).then(c => c?.slice(-1)[0]?.close).catch(() => null);
+      if (pc) await userUpdatePositions(userId, p, pc).catch(() => {});
     }
 
     const ticker = await getTicker(instrument, {}).catch(() => null);
-    const openForInstrument = openPos.filter(p => p.instrument === instrument);
+    const freshDemo = await getUserState(userId);
+    const openForInstrument = (freshDemo.openPositions || []).filter(p => p.instrument === instrument);
 
     const scanSignalForCycle = (signalMode !== 'level' && autoPair && !hasOpenPos && scanData?.best?.instrument === instrument)
       ? { action: scanData.best.action, score: scanData.best.score, delta: scanData.best.delta }
       : null;
 
-    const decision = await runCycle(candles, {
-      balance      : demo.usdBalance,
-      startBalance : demo.startBalance || 10000,
+    const decision = await runCycle(userId, candles, {
+      balance      : freshDemo.usdBalance,
+      startBalance : freshDemo.startBalance || 31.25,
       targetBalance: riskCfg.targetProfitUSD || 500,
       openPositions: openForInstrument,
       instrument,
@@ -109,123 +111,124 @@ async function runAutoCycle() {
       ticker,
     });
 
-    // Process exits
     for (const exitDec of (decision.exits || [])) {
       if (exitDec.isPartial) {
         const pos      = exitDec.position;
         const halfLots = parseFloat((pos.lots * 0.5).toFixed(2));
         const trade = {
-          id        : pos.id + '_partial_' + Date.now(),
+          id: pos.id + '_partial_' + Date.now(),
           instrument: pos.instrument, direction: pos.direction,
-          lots      : halfLots, entryPrice: pos.entryPrice, closePrice: close,
-          openTime  : pos.openTime, closeTime: Date.now(),
-          pnlPips   : exitDec.pnlPips * 0.5, pnlUSD: exitDec.pnlUSD * 0.5,
-          reason    : 'partial_tp',
-          duration  : Math.round((Date.now() - pos.openTime) / 60000),
+          lots: halfLots, entryPrice: pos.entryPrice, closePrice: close,
+          openTime: pos.openTime, closeTime: new Date().toISOString(),
+          pnlPips: exitDec.pnlPips * 0.5, pnlUSD: exitDec.pnlUSD * 0.5,
+          reason: 'partial_tp',
+          duration: Math.round((Date.now() - new Date(pos.openTime).getTime()) / 60000),
         };
-        demo.closedTrades.unshift(trade);
-        demo.usdBalance  = parseFloat((demo.usdBalance + trade.pnlUSD).toFixed(2));
-        demo.totalPnl    = parseFloat((demo.totalPnl   + trade.pnlUSD).toFixed(2));
-        demo.totalPnlPct = parseFloat(((demo.totalPnl / demo.startBalance) * 100).toFixed(2));
-        demo.tradeCount  = (demo.tradeCount || 0) + 1;
-        const idx = demo.openPositions.findIndex(p => p.id === pos.id);
-        if (idx !== -1) {
-          demo.openPositions[idx] = { ...demo.openPositions[idx], lots: halfLots, tp1Triggered: true };
-        }
-        recordTradeResult(trade.pnlUSD, trade.pnlPips, pos.instrument);
+        const st = await getUserState(userId);
+        if (!st.closedTrades) st.closedTrades = [];
+        st.closedTrades.unshift(trade);
+        st.totalPnl    = parseFloat((st.totalPnl + trade.pnlUSD).toFixed(2));
+        st.totalPnlPct = parseFloat(((st.totalPnl / st.startBalance) * 100).toFixed(2));
+        st.tradeCount  = (st.tradeCount || 0) + 1;
+        const idx = st.openPositions.findIndex(p => p.id === pos.id);
+        if (idx !== -1) st.openPositions[idx] = { ...st.openPositions[idx], lots: halfLots, tp1Triggered: true };
+        await saveUserState(userId, st);
+        recordTradeResult(userId, trade.pnlUSD, trade.pnlPips, pos.instrument);
         continue;
       }
+
       if (exitDec.isBreakeven) {
-        const idx = demo.openPositions.findIndex(p => p.id === exitDec.position.id);
-        if (idx !== -1) {
-          demo.openPositions[idx] = { ...demo.openPositions[idx], stopLoss: exitDec.newStopLoss, breakevenSet: true };
-        }
+        const st  = await getUserState(userId);
+        const idx = st.openPositions.findIndex(p => p.id === exitDec.position.id);
+        if (idx !== -1) st.openPositions[idx] = { ...st.openPositions[idx], stopLoss: exitDec.newStopLoss, breakevenSet: true };
+        await saveUserState(userId, st);
         continue;
       }
+
       if (exitDec.position) {
         const exitClosePrice = exitDec.position.instrument === instrument
           ? close : (exitDec.position.currentPrice || close);
-        const result = demoClose(exitDec.position.id, exitClosePrice, exitDec.reason);
-        if (result.success) recordTradeResult(result.trade.pnlUSD, result.trade.pnlPips, exitDec.position.instrument);
+        const result = await userDemoClose(userId, exitDec.position.id, exitClosePrice);
+        if (result.success) recordTradeResult(userId, result.trade.pnlUSD, result.trade.pnlPips, exitDec.position.instrument);
       }
     }
 
-    // Process entry
     if (decision.entry) {
       const e = decision.entry;
-      demoOpen(instrument, e.direction, e.lots, e.price, e.stopLoss, e.takeProfit, {
-        slPips: e.slPips, tpPips: e.tpPips, riskUSD: e.riskUSD,
-        riskReward: e.riskReward, score: e.score, level: e.level,
-        session: e.session, momentumGrade: e.momentumGrade,
-        foundByScanner: autoPair,
+      await userDemoOpen(userId, {
+        instrument,
+        direction  : e.direction,
+        lots       : e.lots,
+        entryPrice : e.price,
+        stopLoss   : e.stopLoss,
+        takeProfit : e.takeProfit,
       });
     }
 
-    lastCycleTime  = new Date().toISOString();
-    lastCycleError = null;
-    cycleCount++;
+    cs.lastCycleTime = new Date().toISOString();
+    cs.lastError     = null;
+    cs.cycleCount++;
 
   } catch (err) {
-    lastCycleError = err.message;
+    cs.lastError = err.message;
+    console.error('[AutoCycle][' + userId + ']', err.message);
   }
 }
 
-// ── Start autocycle loop ──────────────────────────────────────────────────────
-function startAutoCycle(cfg = {}) {
-  if (autoCycleTimer) clearInterval(autoCycleTimer);
-  autoCycleConfig  = { ...autoCycleConfig, ...cfg };
-  autoCycleRunning = true;
-
-  // Cycle interval: 10 detik (Railway server-side, tidak perlu hemat resource browser)
-  autoCycleTimer = setInterval(runAutoCycle, 10_000);
-  runAutoCycle(); // langsung jalankan sekali
+function startUserCycle(userId, cfg = {}) {
+  const cs = getCycleState(userId);
+  if (cs.timer) clearInterval(cs.timer);
+  cs.config  = { ...cs.config, ...cfg };
+  cs.running = true;
+  cs.timer   = setInterval(() => runUserAutoCycle(userId), 10_000);
+  runUserAutoCycle(userId);
 }
 
-function stopAutoCycle() {
-  if (autoCycleTimer) { clearInterval(autoCycleTimer); autoCycleTimer = null; }
-  autoCycleRunning = false;
+function stopUserCycle(userId) {
+  const cs = getCycleState(userId);
+  if (cs.timer) { clearInterval(cs.timer); cs.timer = null; }
+  cs.running = false;
 }
 
-// ── API Handlers ──────────────────────────────────────────────────────────────
-export async function GET() {
+export async function GET(req) {
+  const userId = extractUserId(req);
+  if (!userId) return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
+  const cs  = getCycleState(userId);
+  const bot = getBotState(userId);
   return NextResponse.json({
-    success         : true,
-    autoCycleRunning,
-    autoCycleConfig,
-    lastCycleTime,
-    lastCycleError,
-    cycleCount,
-    botRunning      : getBotState().running,
+    success: true, autoCycleRunning: cs.running, autoCycleConfig: cs.config,
+    lastCycleTime: cs.lastCycleTime, lastCycleError: cs.lastError,
+    cycleCount: cs.cycleCount, botRunning: bot.running,
   });
 }
 
 export async function POST(req) {
+  const userId = extractUserId(req);
+  if (!userId) return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
   const body = await req.json().catch(() => ({}));
   const { action, config } = body;
+  const cs = getCycleState(userId);
 
   switch (action) {
-    case 'start': {
-      startAutoCycle(config || {});
+    case 'start':
+      startUserCycle(userId, config || {});
       return NextResponse.json({ success: true, message: 'Auto-cycle started', autoCycleRunning: true });
-    }
-    case 'stop': {
-      stopAutoCycle();
+    case 'stop':
+      stopUserCycle(userId);
       return NextResponse.json({ success: true, message: 'Auto-cycle stopped', autoCycleRunning: false });
-    }
     case 'status': {
+      const bot = getBotState(userId);
       return NextResponse.json({
-        success: true, autoCycleRunning, autoCycleConfig,
-        lastCycleTime, lastCycleError, cycleCount,
-        botRunning: getBotState().running,
+        success: true, autoCycleRunning: cs.running, autoCycleConfig: cs.config,
+        lastCycleTime: cs.lastCycleTime, lastCycleError: cs.lastError,
+        cycleCount: cs.cycleCount, botRunning: bot.running,
       });
     }
-    case 'update-config': {
-      autoCycleConfig = { ...autoCycleConfig, ...(config || {}) };
-      // Jika cycle sedang running, restart dengan config baru
-      if (autoCycleRunning) startAutoCycle(autoCycleConfig);
-      return NextResponse.json({ success: true, autoCycleConfig });
-    }
+    case 'update-config':
+      cs.config = { ...cs.config, ...(config || {}) };
+      if (cs.running) startUserCycle(userId, cs.config);
+      return NextResponse.json({ success: true, autoCycleConfig: cs.config });
     default:
-      return NextResponse.json({ success: false, error: `Unknown action: ${action}` }, { status: 400 });
+      return NextResponse.json({ success: false, error: 'Unknown action: ' + action }, { status: 400 });
   }
 }
